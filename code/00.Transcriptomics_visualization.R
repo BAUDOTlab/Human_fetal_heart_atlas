@@ -54,9 +54,6 @@ p1 <- DimPlot(my_data, reduction = "umap", group.by = "orig.ident", cols = Discr
 p1$data$orig.ident <- fct_relevel(p1$data$orig.ident, "hu140_8.6 pcw", "hu084_9.0 pcw", "hu122_10.7 pcw") 
 p1
 
-# Display the updated grouped UMAP plot
-p1
-
 # Create a combined plot with the grouped UMAP and the individual UMAP side by side
 p2 <- DimPlot(my_data, reduction = "umap", label = TRUE, repel = TRUE)
 p1 + p2
@@ -70,8 +67,27 @@ p3$data$orig.ident <- fct_relevel(p3$data$orig.ident, "hu140_8.6 pcw", "hu084_9.
 # Display the split.by plot with reordered legend levels
 p3
 
+#Changin original ident to hu140_8.6 pcw
+
+# Assuming you have already loaded and processed your data into 'my_data'
+
+# Assuming you have already loaded and processed your data into 'my_data'
+
+# Specify the orig.ident level you want to select
+selected_orig_ident <- "hu140_8.6 pcw"
+
+# Find the cell indices that match the desired orig.ident level
+selected_indices <- which(my_data$orig.ident == selected_orig_ident)
+
+# Create a new Seurat object containing only the selected cells
+selected_seurat <- my_data[selected_indices, ]
+
+# Now, 'selected_seurat' contains only the cells from the desired orig.ident level
+
+#Change the assay to RNA
+DefaultAssay(my_data) <- "RNA"  
 # Create a gene vector with genes of interest
-genes <- c('NRF2','PSTN','SDF1','ALDH1A1', 'ALDH1A2', 'ASTN2', 'BMP10', 'BMP4', 'CDH19', 'COL2A1', 'COL6A6', 'CRABP1', 'CRABP2', 'CXCL12', 'CXCL14', 'CXCR4', 'DLK1', 'EBF2', 'EDIL3', 'EDN1', 'ELN', 'ENPEP', 'ERBB3', 'FABP4', 'FBLN1', 'FLI1', 'FRZB', 'FST', 'GATA4', 'GATA5', 'GPC3', 'HCN4', 'HES1', 'HGF', 'HHIP', 'HOXA5', 'IGF1', 'IRX1', 'IRX2', 'IRX3', 'IRX4', 'IRX5', 'IRX6', 'ISL1', 'MDFI', 'MYH6', 'MYH7', 'MYL2', 'MYL7', 'MYOM2', 'NKX2-5', 'NNAT', 'NR2F2', 'NRG1', 'NRP2', 'NRXN1', 'PECAM1', 'PHOX2B', 'PITX2', 'PLP1', 'POSTN', 'PRRX1', 'SCN7A', 'SHOX2', 'SNAI1', 'SNAI2', 'SOX10', 'SOX4', 'SPP1', 'SPRY1', 'SST', 'SSTR2A', 'TBX1', 'TBX18', 'TBX3', 'TBX5', 'TCF21', 'TF', 'TRH', 'TWIST', 'VSNL1', 'WNT2', 'XKR4', 'ZEB2')
+genes <- c('PRRX1', 'EDIL3', 'FABP4', 'MYL7','NRF2','PSTN','SDF1','ALDH1A1', 'ALDH1A2', 'ASTN2', 'BMP10', 'BMP4', 'CDH19', 'COL2A1', 'COL6A6', 'CRABP1', 'CRABP2', 'CXCL12', 'CXCL14', 'CXCR4', 'DLK1', 'EBF2', 'EDIL3', 'EDN1', 'ELN', 'ENPEP', 'ERBB3', 'FABP4', 'FBLN1', 'FLI1', 'FRZB', 'FST', 'GATA4', 'GATA5', 'GPC3', 'HCN4', 'HES1', 'HGF', 'HHIP', 'HOXA5', 'IGF1', 'IRX1', 'IRX2', 'IRX3', 'IRX4', 'IRX5', 'IRX6', 'ISL1', 'MDFI', 'MYH6', 'MYH7', 'MYL2', 'MYL7', 'MYOM2', 'NKX2-5', 'NNAT', 'NR2F2', 'NRG1', 'NRP2', 'NRXN1', 'PECAM1', 'PHOX2B', 'PITX2', 'PLP1', 'POSTN', 'PRRX1', 'SCN7A', 'SHOX2', 'SNAI1', 'SNAI2', 'SOX10', 'SOX4', 'SPP1', 'SPRY1', 'SST', 'SSTR2A', 'TBX1', 'TBX18', 'TBX3', 'TBX5', 'TCF21', 'TF', 'TRH', 'TWIST', 'VSNL1', 'WNT2', 'XKR4', 'ZEB2')
 
 # Check if all genes are present in the data
 missing_genes <- genes[!genes %in% rownames(my_data)]
@@ -80,7 +96,7 @@ if (length(missing_genes) > 0) {
   cat(paste(missing_genes, collapse = ", "), "\n")
 }
 
-pdf(file = "multipleViolinPlot_heather.pdf")
+pdf(file = "multipleViolinPlot.pdf")
 for (gene in genes) {
   if (gene %in% rownames(my_data)) {
     print(VlnPlot(my_data, features = gene, cols = DiscretePalette(n=21, palette = "polychrome")))
@@ -91,7 +107,7 @@ for (gene in genes) {
 dev.off()   # important line to indicate the process to stop write to the file
 
 # Create gene vector
-genes <- c('NRF2','PSTN','SDF1','ALDH1A1', 'ALDH1A2', 'ASTN2', 'BMP10', 'BMP4', 'CDH19', 'COL2A1', 'COL6A6', 'CRABP1', 'CRABP2', 'CXCL12', 'CXCL14', 'CXCR4', 'DLK1', 'EBF2', 'EDIL3', 'EDN1', 'ELN', 'ENPEP', 'ERBB3', 'FABP4', 'FBLN1', 'FLI1', 'FRZB', 'FST', 'GATA4', 'GATA5', 'GPC3', 'HCN4', 'HES1', 'HGF', 'HHIP', 'HOXA5', 'IGF1', 'IRX1', 'IRX2', 'IRX3', 'IRX4', 'IRX5', 'IRX6', 'ISL1', 'MDFI', 'MYH6', 'MYH7', 'MYL2', 'MYL7', 'MYOM2', 'NKX2-5', 'NNAT', 'NR2F2', 'NRG1', 'NRP2', 'NRXN1', 'PECAM1', 'PHOX2B', 'PITX2', 'PLP1', 'POSTN', 'PRRX1', 'SCN7A', 'SHOX2', 'SNAI1', 'SNAI2', 'SOX10', 'SOX4', 'SPP1', 'SPRY1', 'SST', 'SSTR2A', 'TBX1', 'TBX18', 'TBX3', 'TBX5', 'TCF21', 'TF', 'TRH', 'TWIST', 'VSNL1', 'WNT2', 'XKR4', 'ZEB2')
+genes <- c('PRRX1', 'EDIL3', 'FABP4', 'MYL7','NRF2','PSTN','SDF1','ALDH1A1', 'ALDH1A2', 'ASTN2', 'BMP10', 'BMP4', 'CDH19', 'COL2A1', 'COL6A6', 'CRABP1', 'CRABP2', 'CXCL12', 'CXCL14', 'CXCR4', 'DLK1', 'EBF2', 'EDIL3', 'EDN1', 'ELN', 'ENPEP', 'ERBB3', 'FABP4', 'FBLN1', 'FLI1', 'FRZB', 'FST', 'GATA4', 'GATA5', 'GPC3', 'HCN4', 'HES1', 'HGF', 'HHIP', 'HOXA5', 'IGF1', 'IRX1', 'IRX2', 'IRX3', 'IRX4', 'IRX5', 'IRX6', 'ISL1', 'MDFI', 'MYH6', 'MYH7', 'MYL2', 'MYL7', 'MYOM2', 'NKX2-5', 'NNAT', 'NR2F2', 'NRG1', 'NRP2', 'NRXN1', 'PECAM1', 'PHOX2B', 'PITX2', 'PLP1', 'POSTN', 'PRRX1', 'SCN7A', 'SHOX2', 'SNAI1', 'SNAI2', 'SOX10', 'SOX4', 'SPP1', 'SPRY1', 'SST', 'SSTR2A', 'TBX1', 'TBX18', 'TBX3', 'TBX5', 'TCF21', 'TF', 'TRH', 'TWIST', 'VSNL1', 'WNT2', 'XKR4', 'ZEB2')
 
 # Verify if all are in your data (you should have everything TRUE)
 missing_genes <- genes[!genes %in% rownames(my_data)]
@@ -100,7 +116,7 @@ if (length(missing_genes) > 0) {
   cat(paste(missing_genes, collapse = ", "), "\n")
 }
 
-pdf(file = "multipleFeaturePlot_heather.pdf")
+pdf(file = "multipleFeaturePlot.pdf")
 for (gene in genes) {
   if (gene %in% rownames(my_data)) {
     print(FeaturePlot(my_data, features = gene))
@@ -109,6 +125,7 @@ for (gene in genes) {
   }
 }
 dev.off()   # important line to indicate the process to stop write to the file
+
 
 # Assuming you have loaded your Seurat object named 'my_data' and manually re-clustered your cells.
 # The 'new.cluster.ids' vector should contain the new cluster names you provided.
