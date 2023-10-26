@@ -1,0 +1,169 @@
+---
+title: "Fibroblast and cardiomyocyte trajectory"
+output: html_document
+header-includes:
+  - \usepackage{subcaption}
+  - \usepackage{float}
+---
+#### We conducted a trajectory analysis of fibroblast (Fib) and cardiomyocyte (CM) in the integrated data.
+#### There are three parts in this markdown file: 1) integration of all Fib and CM cells; 2) trajectory analysis by slingshot; 3) confusion matrix between clusters of Fib/CM in the integrated data and clusters from this study.
+#### The integration of Fib and CM was performed in Phate package. Louvain clustering was applied in the integrated data. Cell types and stages were showed in the integrated Phate embedding (Figure 1.1-1.2).
+#### The trajectory analysis was performed by slingshot based on clusters in the integrated data (Figure 2.1).
+#### The clusters in the integrated data were compared to clusters from this study (Figure 3.1).
+#### The distribution of developmental stages were showed in each cluster in the integrated data (Figure 3.2).
+```{r, eval=F, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# Space separator
+```
+
+#### 1. Embed fibroblast and cardiomyocyte in integrated data by Phate
+```{r, eval=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# CM + Fib + CNCC
+cfc_cl<- rownames(seu_clu)[seu_clu[,1] %in% c(1:3,8,10)] # 46203, take from the integrated data
+cfc_mx<- lapply(mg_mx, function(x){ x[ ,colnames(x) %in% cfc_cl ] })
+# remove CNCC
+cncc<- cfc_cl[all_meta[cfc_cl,3] %in% c('CM4-Melan','NE','Cardiac neural crest cells ')] # 595
+cf_mx<- sapply( cfc_mx, function(x){ x[, ! colnames(x) %in% cncc]})
+
+# Seurat
+library(Seurat)
+seu<- lapply( cf_mx, function(x){ CreateSeuratObject( x, min.cells = 0, min.features = 0 )})
+seu <- mapply(function(x, y) {
+    if(y) x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 1000)
+}, x=seu, y=rep(T,5) )
+length(features <- SelectIntegrationFeatures(object.list = seu,nfeatures=1000))
+length( features<- setdiff( features, vis_rmg) )
+seu <- lapply(X = seu, FUN = function(x) {
+    x <- ScaleData(x, features = features, verbose = FALSE)
+    x <- RunPCA(x, features = features, verbose = FALSE)
+})
+anchor <- FindIntegrationAnchors(object.list = seu, anchor.features = features, reduction = "rpca", dims=1:50, reference=3)
+seu_comb <- IntegrateData(anchorset = anchor)
+DefaultAssay(seu_comb) <- "integrated"
+# Run the standard workflow for visualization and clustering
+seu_comb <- ScaleData(seu_comb, verbose = FALSE)
+seu_comb <- RunPCA(seu_comb, npcs = 50, verbose = FALSE, features=features )
+seu_comb <- RunUMAP(seu_comb, reduction = "pca", dims = 1:30)
+cf_umap<-seu_comb@reductions$umap@cell.embeddings
+cf_pcac<- seu_comb@reductions$pca@cell.embeddings
+cf_hvg<- features
+
+# identify clusters in Seurat
+seu_comb<- FindNeighbors(seu_comb, dims = 1:30)
+cf_clus <- rep(0, nrow(cf_umap))
+resos<- seq(.1,1,.1)
+for( reso in resos){
+  seu_comb<-FindClusters(seu_comb, resolution =reso, dims.use =1:30 )
+  one_res<- as.numeric(seu_comb@active.ident)
+  names(one_res)<- names(seu_comb@active.ident)
+  cf_clus<- cbind( cf_clus, one_res)  
+}
+cf_clus<- cf_clus[,-1]
+colnames(cf_clus)<- resos
+rownames(cf_clus)<- rownames(cf_umap)
+
+# Phate on CM-Fib cells
+library(phateR)
+cf_phate<- phate( cf_pcac, knn=20 ) # input PCA, look at no PCA step when variables is less than 100?
+#save( cf_phate, file='../etchevers/result/cf/cf_pcac_knn20_phate.rdata')
+```
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+cf_dr<- cf_phate$embedding
+#pdf(paste('../etchevers/result/','cf/','glo_pcac_phate.pdf',sep=''),width=7,height=7) # by dataset
+par(cex=2,las=1,mar=rep(.7,4),lwd=3, mfrow=c(2,2))
+plot(cf_dr[rand_ind,1],cf_dr[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=ds_col[as.character(all_meta[rownames(cf_dr),1]) ][rand_ind],cex=0.2, xaxt='n',yaxt='n', xlim=range(cf_dr[,1]), ylim=range(cf_dr[,2]) , main='dataset')
+#legend( 'bottomleft', col=ds_col, legend=c('CS12-16','6.5-7w','8.6-10.7w'), xpd=NA, bty='n', pch=16, cex=1.5)
+plot(cf_dr[rand_ind,1],cf_dr[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=tp1_col[as.character(all_meta[rownames(cf_dr),3]) ][rand_ind],cex=0.3, xaxt='n', yaxt='n', xlim=range(cf_dr[,1]), ylim=range(cf_dr[,2]), main='CS12-16' )
+#legend( 'topleft', col=tp1_col, legend=paste(1:15,c('SHF',names(tp1_col)[-c(1,15)],'splanchnic LPM-21')), xpd=NA, bty='n', pch=16, cex=.5)
+plot(cf_dr[rand_ind,1],cf_dr[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=tp2_col[as.character(all_meta[rownames(cf_dr),3]) ][rand_ind],cex=0.3,xaxt='n',yaxt='n', xlim=range(cf_dr[,1]), ylim=range(cf_dr[,2]) , main='6.5-7w')
+#legend( 'topleft', col=tp2_col, legend=paste(1:length(tp2_col),names(tp2_col)), xpd=NA, bty='n', pch=16, cex=.5)
+plot(cf_dr[rand_ind,1],cf_dr[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=tp3_col2[as.character(all_meta[rownames(cf_dr),3]) ][rand_ind],cex=0.2,xaxt='n',yaxt='n', xlim=range(cf_dr[,1]), ylim=range(cf_dr[,2]), main='8.6-10.7w' )
+#dev.off()
+```
+##### Figure 1.1: Phate embedding of Fib and CM by dataset.
+######## .
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+#pdf(paste('../etchevers/result/','cf/','glo_phate_stage.pdf',sep=''),width=7,height=7) # by all stages
+par(cex=2,las=1,mar=rep(.7,4),lwd=3, cex.main=2, mfrow=c(1,2) )
+plot(cf_dr[rand_ind,1],cf_dr[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=st_col[as.character(all_meta[rownames(cf_dr),4]) ][rand_ind],cex=0.2, xaxt='n',yaxt='n', main='stage')
+#legend( 'bottomright', col=st_col, legend=c(names(st_col)[1:3],'6.5-7w',names(st_col)[5:7]), xpd=NA, bty='n', pch=16, cex=.8)
+#dev.off()
+
+# seurat clusters on Phate
+#pdf(paste('../etchevers/result/','cf/','glo_phate_seuclu.pdf',sep=''), width=8,height=12) # by Seurat clusters
+par(cex=2,las=1,mar=rep(.5,4),lwd=3, pch=16, cex.main=1 )
+i<-4
+plot_cen<- sapply( sort(unique(cf_clus[,i])), function(x){
+  cl<- rownames(cf_clus)[cf_clus[,i]==x]
+  res<-c(median(cf_dr[cl,1]), median(cf_dr[cl,2]))
+  return(res)
+})
+plot(cf_dr[rand_ind,1],cf_dr[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=col6[-1][cf_clus[,i]][rand_ind],cex=0.1,main='cluster', xaxt='n',yaxt='n')
+for(i in 1:ncol(plot_cen)) text( plot_cen[1,i], plot_cen[2,i], label=i, xpd=NA)
+#dev.off()
+```
+##### Figure 1.2: Stages and clusters on the Phate embedding.
+######## .
+
+#### 2. Slingshot trajectory
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+library(slingshot)
+cf_clu<- cf_clus[,4]
+cf_phate_lin <- getLineages(cf_dr, cf_clu)
+cf_clu_ear <-tapply( names(cf_clu), cf_clu, function(x){ (sum( all_meta[x,1] %in% 'our')*2 + sum( all_meta[x,1] %in% 'asp'))/length(x)   })
+#pdf(paste('../etchevers/result/','cf/','glo_phate_slin.pdf',sep='') )
+par(cex=2,las=1,mar=rep(0.1,4),lwd=3, pch=16 , xaxt='n',yaxt='n')
+plot(cf_dr, col = col6[-1][cf_clu], frame=F, cex=.2)
+lines(SlingshotDataSet(cf_phate_lin), lwd = 3, col = 'black', cex= 0.01 )
+plot_cen<- sapply( names(cf_clu_ear) , function(x){ c( mean(cf_dr[ names(cf_clu)[cf_clu==x], 1]), mean(cf_dr[ names(cf_clu)[cf_clu==x], 2]) ) })
+clu_cex<- cf_clu_ear*3; clu_cex[clu_cex<1]<-1; clu_cex[clu_cex>2]<-2
+for( i in 1:ncol(plot_cen)){ # plot node size by percentage of early cells
+#points( plot_cen[1,i], plot_cen[2,i] , cex=clu_cex[i], col=col6[1] )
+points( plot_cen[1,i], plot_cen[2,i] , cex=1, col=col6[1] )
+}
+for( i in 1:ncol(plot_cen)) text( plot_cen[1,i], plot_cen[2,i] , label=i, cex=1, col='black' ,xpd=NA)
+#dev.off()
+```
+
+##### Figure 2.1: slingshot trajectory on the Phate embedding.
+######## .
+
+#### 3. Confusion matrix between clusters of Fib/CM and original clusters
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+etc_in <- etc_tp[ c(1:2,4:6,8:10,19, 14:17,21 ) ]
+etc_in_clu<- sapply( sapply(etc_in, function(x){ rownames(all_meta)[all_meta[,3]%in% x] }), function(x){ sapply( tapply(names(cf_clu), cf_clu, function(x){x}), function(y){ sum(x %in% y) } ) })
+plot_mx<- t( apply( etc_in_clu, 2, function(x){ x/sum(x)}) ) # by individual cluster
+plot_mx<-  apply( etc_in_clu, 1, function(x){ x/sum(x)}) # by global cluster
+plot_mx<-  t( etc_in_clu*100/as.numeric(tapply(names(cf_clu), cf_clu, length)) ) # by global cluster, divide by total number of global clusters
+plot_mx<- plot_mx[, order(apply( plot_mx, 2, which.max)) ]
+#pdf(paste('../etchevers/result/','cf/','glo_clu_in_etc.pdf',sep='') )
+tmp<-heatmap3( plot_mx,labRow=paste(rownames(plot_mx),'    '),scale='none',dendrogram='none',trace='none',Rowv=F,Colv=F,symkey=F,density.info="none",keysize=1,col=colorRampPalette(c("blue","white","red"))(499),color_key_label='Cells %',color_key_label_cex=1,margins=c(1,1),color_key_axis_cex=1,key_mar=c(2,.5, .5,.5),labCol=paste('   ',colnames(plot_mx)),labRow_pos=c(2),sepwidth=c(0.1,0.1),sepcolor='black',cexRow=2,cexCol=2 ,lhei=c(1,5), labCol_las=2, labCol_pos=3, RowSideColors=tp3_col2[rownames(plot_mx)], ColSideColors= col6[-1][as.numeric(colnames(plot_mx))])
+#dev.off()
+```
+##### Figure 3.1: confusion matrix between clusters of Fib/CM in the integrated data and clusters from this study.
+######## .
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# cells from each stage in each cluster
+clu_st<- sapply( colnames(plot_mx), function(x){
+  res<- rep( 0, 7)
+  names(res)<- rev(names(st_col))
+  st<- table( all_meta[ names(cf_clu)[cf_clu==as.numeric(x)],4] )
+  res[ intersect(names(st),names(res))]<- st[ intersect(names(st),names(res))]
+  return(res)
+})
+#pdf(paste('../etchevers/result/','cf/','glo_clu_st.pdf',sep=''),height=3, )
+par(cex=1.5,las=1,mar=c(1,3,.5,3),lwd=3,mgp=c(2,.5,0))
+bar<-barplot( apply(clu_st,2,function(x){ x/sum(x)*100}), xlab='', ylab='Stage (%)' , col=st_col[rownames(clu_st)], border=NA, names.arg=rep('',ncol(clu_st)) )
+text( bar, -3, label=colnames(clu_st), xpd=NA )
+legend( 19,90, col=st_col, legend=c(names(st_col)[1:3],'6.5-7w',names(st_col)[5:7]), xpd=NA, bty='n', pch=16, cex=.8)
+#dev.off()
+```
+##### Figure 3.2: distribution of developmental stages in each cluster in the integrated data.
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# save.image('etc_tra.rdata') # save workspace
+sessionInfo()
+```

@@ -1,0 +1,444 @@
+---
+title: "Heart Integration"
+output: html_document
+header-includes:
+  - \usepackage{subcaption}
+  - \usepackage{float}
+---
+
+#### We conducted an integration analysis of scRNA-seq data in embryonic heart using the Seurat package in R.
+#### There are three parts in this markdown file: 1) integration of three datasets; 2) calculate similarity between cell types in three datasets; 3) match cell types between datasets based on similarity.
+#### Data stages and source: 8.6-10.7 week (this study), 6.5-7 week (Asp et al. 2019), CS12-CS16 (Xu et al. 2023) (Figure 1.1).
+#### The integration was performed by rPCA in Seurat package. Louvain clustering was applied in the integrated data. Cell types and stages were showed in the integrated Umap (Figure 1.2-1.6).
+#### The similarities between cell types were measured by 1/(1 + distance), where the distance was defined by slingshot package (Figure 2.1).
+#### The matches between cell types were defined by thresholding similarity score, which were visualized by igraph package (Figure 3.1-3.2).
+```{r, eval=F, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# Space separator
+```
+
+#### 1. Integrate 3 heart datasets: this study, Xu's data, and Asp's scRNA-seq
+```{r, eval=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# brew install pandoc
+knitr::opts_chunk$set(warning = FALSE) # setting of rmarkdown
+options( width=100 )
+# render('heart_integration.Rmd')
+
+sc_raw<- read.table('../asp_heart/count/Filtered/scRNA/all_cells_count_matrix_filtered.tsv',sep='\t',as.is=T)
+sc_meta<- read.table('../asp_heart/count/Filtered/scRNA/all_cells_meta_data_filtered.tsv',sep='\t',as.is=T, fill=T,header=T) # pending for meta-data problem
+sc_mx<- data.matrix( sc_raw[-1,-1] ) # this is raw matrix
+colnames(sc_mx) <- sc_raw[1,-1]
+rownames(sc_mx) <- sc_raw[-1,1]
+sc_tp<- sapply( colnames(sc_mx), function(x){ sc_meta[ sc_meta[,1]==x, 'celltype'] })
+sum(is.na(sc_tp)) #[1] 0
+
+# Xu's data
+load('../../2022/result/filter2022/clustering/hvgBysam500_mg2_noNao1_tf291_tfLcc_hvgLcc_rmEndog3/flc_raw_0421.rdata') # THIS IS RAW matrix of ALL USED CELLS
+load(file='../../2022/result/ficlu2022/ficlu_20220522.rdata')
+in_tp<- c('splanchnic LPM-12', paste('heart',1:11,sep='-'), 'endothelium-4','endothelium-6','endothelium-10' ) # include endocardium
+length(vis_blood<- rownames(allc_meta)[allc_meta[,'dissection_part'] %in% c('viscera','viscera-lowerTrunk') & allc_meta[,3]=='blood']) # 3023
+
+our_mx<- flc_raw[ , c(rownames(allc_anno)[allc_anno[,1] %in% in_tp],vis_blood) ] # [1] 32351  8266
+rm(flc_raw)
+gene<-read.table('../../10x/head/filtered_gene_bc_matrices/filtered_gene_bc_matrices/GRCh38/genes.tsv',sep='\t',as.is=T) # [1] 33694     2
+ge2an<-gene[,2]
+names(ge2an)<-gene[,1]
+get_id<-function(x){ sapply(x, function(y){names(ge2an)[ge2an==y][1]})}
+
+
+# merge matrix
+get_emb<-function(x){
+  emb<-gsub("[A-z]", "", sapply(x,function(y){ strsplit(y,split='_')[[1]][1] }) )
+  return(emb)
+}
+# remove blood cells in Asp's data
+length(asp_rm<- names(sc_tp)[sc_tp %in% c('Erythrocytes','Immune cells')]) # DO NOT remove
+
+# Heather's data
+load('../etchevers/code/et_data.rdata')
+sum(! comg %in% rownames(et_raw) ) # [1] 0, checked on genes!
+
+# normalize matrix for 3 datasets
+our_norm<- t(t(our_mx)*10000/colSums(our_mx))
+asp_norm<- t(t(sc_mx)*10000/colSums(sc_mx))
+etc_norm<- t(t(et_raw)*10000/colSums(et_raw))
+save( our_norm, asp_norm, etc_norm, file='h3_norm_mxs.rdata')
+
+
+length( comg<- names(ge2an)[ names(ge2an) %in% rownames(our_mx) & ge2an %in% rownames(sc_mx) ] ) # [1] 15108
+mg_mx<- list( our_mx[ comg, !sapply(colnames(our_mx),get_emb) %in% c('21','22') ], our_mx[ comg, sapply(colnames(our_mx),get_emb) %in% c('21','22') ], sc_mx[ ge2an[comg],], et_raw[comg,et_meta[,1]]  ) # separate our embryos into two batches
+rownames(mg_mx[[3]])<- rownames(mg_mx[[1]])
+sapply(mg_mx,dim)
+#[2,]  6829  1437  3777 49227
+rm(et_raw)
+rm(sc_raw, sc_mx)
+rm(our_mx)
+
+# meta data
+allc_meta<- read.table(file='../../GSE157329/allc_meta_order.txt',sep='\t', header=T,as.is=T)
+rownames(allc_meta)<- allc_meta[,1]
+our_meta<- cbind( 'our',allc_meta[ colnames(our_mx),c(2,5,8,3)])
+colnames(our_meta)[c(1,5)]<- c('dataset','system')
+our_meta[ our_meta[,5]!='blood' ,5]<- 'heart'
+asp_meta<- cbind( 'asp', sc_tp[colnames(sc_mx)], sc_tp[colnames(sc_mx)], '6.5w','heart' )
+colnames(our_meta)-> colnames(asp_meta)
+asp_meta[  asp_meta[,3] %in% c('Erythrocytes','Immune cells') ,5]<- 'blood'
+# add heather's meta data
+et_st<- c('8.6w','9.0w','10.7w')
+names(et_st)<- c("hu140_8.6_pcw",  "hu084_9.0_pcw", "hu122_10.7_pcw")
+et_meta2<- cbind( 'etc', as.character(et_meta[,c('celltype')]), as.character(et_meta[,c('celltype')]), as.character(et_st[et_meta[,'stage']]),'heart' )
+et_meta2[et_meta2[,2] %in% c('Blood'),5]<-'blood'
+rownames(et_meta2)<- et_meta[,1]
+colnames(et_meta2)<- colnames(our_meta)
+# all meta data
+all_meta<- rbind( our_meta, asp_meta, et_meta2)
+sum( ! unlist(sapply(mg_mx,colnames)) %in% rownames(all_meta)) # 0, check
+
+######################## UPDATE CNC and immune cell labels in Asp data, which is swapped!
+all_meta[all_meta[,1]=='asp'& all_meta[,3]=='Immune cells',3 ] <-'token'
+all_meta[all_meta[,1]=='asp'& all_meta[,3]=='Cardiac neural crest cells ',3 ] <-'Immune cells'
+all_meta[all_meta[,1]=='asp'& all_meta[,3]=='token',3 ] <-'Cardiac neural crest cells '
+
+vis_rmg<- scan( '../../cross_embryo/code/vis_rmg.txt',what=character(0))
+tf<- scan('../../Imai_table/humanTF_GO0003700_clear.txt', what=character(0))
+
+# Seurat
+library(Seurat)
+batch<-'blood_hvg1k' # the best
+seu<- lapply( mg_mx, function(x){ CreateSeuratObject( x, min.cells = 0, min.features = 0 )})
+seu <- mapply(function(x, y) {
+    if(y) x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 1000)
+}, x=seu, y=c(T,T,T,T) )
+length(features <- SelectIntegrationFeatures(object.list = seu,nfeatures=1000))
+length( features<- setdiff( features, vis_rmg) )
+seu <- lapply(X = seu, FUN = function(x) {
+    x <- ScaleData(x, features = features, verbose = FALSE)
+    x <- RunPCA(x, features = features, verbose = FALSE)
+})
+anchor <- FindIntegrationAnchors(object.list = seu, anchor.features = features, reduction = "rpca", dims=1:50, reference=4 )
+seu_comb <- IntegrateData(anchorset = anchor)
+DefaultAssay(seu_comb) <- "integrated"
+# Run the standard workflow for visualization and clustering
+seu_comb <- ScaleData(seu_comb, verbose = FALSE)
+seu_comb <- RunPCA(seu_comb, npcs = 50, verbose = FALSE, features=features )
+seu_comb <- RunUMAP(seu_comb, reduction = "pca", dims = 1:30)
+umap<-seu_comb@reductions$umap@cell.embeddings
+pcac<- seu_comb@reductions$pca@cell.embeddings
+save( pcac, all_meta, tp2_cncc, file=paste('../etchevers/result/',batch,'_pcac.rdata',sep='') )
+
+# clustering
+seu_comb<- FindNeighbors(seu_comb, dims = 1:30)
+seu_clu <- rep(0, nrow(umap))
+resos<- seq(.1,1,.1)
+for( reso in resos){
+  seu_comb<-FindClusters(seu_comb, resolution =reso, dims.use =1:30 )
+  one_res<- as.numeric(seu_comb@active.ident)
+  names(one_res)<- names(seu_comb@active.ident)
+  seu_clu<- cbind( seu_clu, one_res)  
+}
+seu_clu<- seu_clu[,-1]
+colnames(seu_clu)<- resos
+
+# calculate markers for level-1 clusters at resolution = .1
+reso<- .1
+  seu_comb<-FindClusters(seu_comb, resolution =reso, dims.use =1:30 )
+seu_mk<- FindAllMarkers(seu_comb,only.pos = T)
+
+rm(seu_comb, seu, anchor)
+```
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# plot seurat clusters
+#pdf(paste('../etchevers/result/',batch,'_seuclu.pdf',sep=''), width=8,height=12)
+par(cex=2,las=1,mar=c(5,4,1,1),lwd=3, mfrow=c(2,2),pch=16 )
+for(i in 1:8){
+plot_cen<- sapply( sort(unique(seu_clu[,i])), function(x){
+  cl<- rownames(seu_clu)[seu_clu[,i]==x]
+  res<-c(median(umap[cl,1]), median(umap[cl,2]))
+  return(res)
+})
+plot(umap[rand_ind,1],umap[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=col6[-1][seu_clu[,i]][rand_ind],cex=0.2,main=max(seu_clu[,i]))
+for(i in 1:ncol(plot_cen)) text( plot_cen[1,i], plot_cen[2,i], label=i, xpd=NA)
+}
+#dev.off()
+```
+##### Figure 1.1: clustering in the integrated data of three heart datasets.
+######## .
+
+
+```{r, eval=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# plot by stage and cell types
+tmp<-unique(read.table('/Volumes/baolab-1/bao_data_zrc/baolab/xuy/ciona/cluster2/product/code/type_all_col3.txt',sep='\t',as.is=T,comment.char='')[,2])
+col6<-c('lightgrey','red',tmp[3],'purple',tmp[2],tmp[5],'blue','green4','orchid','turquoise','sienna',tmp[9],'yellow2','hotpink','navy','steelblue','skyblue','pink','black',tmp[4],rainbow(7))
+st_col<- col6[c(18,20,2,8,17,7,9)]
+names(st_col)<-c('CS12','CS13-14','CS15-16','6.5w','8.6w','9.0w','10.7w')
+sys_col<- col6[c(3,2)]
+names(sys_col)<- c('heart','blood')
+
+tp1_col<- col6[c(2,4,9,14,27,18,20,7,16,17,6,5,3,23,8)]
+names(tp1_col)<- unique( all_meta[all_meta[,1]=='our' & all_meta[,5]!='blood',3])
+tp1_col<- tp1_col[c(1:7,11,8:10,13:15,12)]
+#tp1_col[15]<-NA
+tp2_col<- col6[c(1,16,10,5,8,11,5,3,7,14,9,19 )]
+names(tp2_col)<- unique( all_meta[all_meta[,1]=='asp',3])
+tp2_col<- tp2_col[c(11,10,6,9,2,3,8,5,4,12)]
+tp3_col<-c( tp1_col[ c( 2,2,15, 4,4,4, 8, 3,3, 8, 12,14, 9, 10,10,10,10, 13, 8)], 'black','grey' )
+names(tp3_col) <- sort(unique( all_meta[all_meta[,1]=='etc',3]))
+```
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+rand_ind<- sample.int( nrow(umap) )
+#pdf(paste('../etchevers/result/',batch,'_stage.pdf',sep=''),width=7,height=7) # by dataset
+par(cex=2,las=1,mar=rep(.5,4),lwd=3)
+plot(umap[rand_ind,1],umap[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=st_col[as.character(all_meta[rownames(umap),4]) ][rand_ind],cex=0.2, xaxt='n',yaxt='n')
+legend( 'bottomright', col=st_col, legend=c(names(st_col)[1:3],'6.5-7w',names(st_col)[5:7]), xpd=NA, bty='n', pch=16, cex=.8)
+#dev.off()
+```
+##### Figure 1.2: stages in the integrated data of three heart datasets.
+######## .
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+#pdf(paste('../etchevers/result/',batch,'_system.pdf',sep=''),width=7,height=7) # by system
+par(cex=2,las=1,mar=rep(.5,4),lwd=3)
+plot(umap[rand_ind,1],umap[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=sys_col[as.character(all_meta[rownames(umap),5]) ][rand_ind],cex=0.2, xaxt='n',yaxt='n')
+legend( 'bottomright', col=sys_col, legend=names(sys_col), xpd=NA, bty='n', pch=16, cex=1.5)
+#dev.off()
+```
+##### Figure 1.3: heart/blood in the integrated data of three heart datasets.
+######## .
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+plot_cen<- sapply( names(tp1_col), function(x){
+  cl<- rownames(all_meta)[all_meta[,3]==x]
+  res<-c(median(umap[cl,1]), median(umap[cl,2]))
+  return(res)
+})
+plot_cen[2,13]<- plot_cen[2,13]-1.2
+plot_cen[1,8]<- plot_cen[1,8]-.5
+plot_cen[2,1]<- plot_cen[2,1]-.5
+#pdf(paste('../etchevers/result/',batch,'_tp1.pdf',sep=''),width=7,height=7)
+par(cex=2,las=1,mar=rep(.5,4),lwd=3)
+plot(umap[rand_ind,1],umap[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=tp1_col[as.character(all_meta[rownames(umap),3]) ][rand_ind],cex=0.2, xaxt='n', yaxt='n')
+for(i in 1:15) text( plot_cen[1,i], plot_cen[2,i], label=i, xpd=NA)
+legend( 'bottomright', col=tp1_col, legend=paste(1:15,c('second heart field',names(tp1_col)[-c(1,15)],'splanchnic LPM-21')), xpd=NA, bty='n', pch=16, cex=.4)
+#dev.off()
+```
+##### Figure 1.4: cell types in Xu's data in the integrated data of three heart datasets.
+######## .
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+plot_cen<- sapply( names(tp2_col), function(x){
+  cl<- rownames(all_meta)[all_meta[,3]==x]
+  res<-c(median(umap[cl,1]), median(umap[cl,2]))
+  return(res)
+})
+#pdf(paste('../etchevers/result/',batch,'_tp2.pdf',sep=''))
+par(cex=2,las=1,mar=rep(.5,4),lwd=3)
+plot(umap[rand_ind,1],umap[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=tp2_col[as.character(all_meta[rownames(umap),3]) ][rand_ind],cex=0.2,xaxt='n',yaxt='n',main='')
+for(i in 1:ncol(plot_cen)) text( plot_cen[1,i], plot_cen[2,i], label=i, xpd=NA)
+legend( 'bottomleft', col=tp2_col, legend=paste(1:length(tp2_col),names(tp2_col)), xpd=NA, bty='n', pch=16, cex=.4)
+#dev.off()
+```
+##### Figure 1.5: cell types in Asp's data in the integrated data of three heart datasets.
+######## .
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+sum(duplicated(unlist(sapply( unique(all_meta[,1]), function(x){ unique(all_meta[all_meta[,1] %in%x,3] ) })))) # [1] 0, no duplication on cell type name across dataset
+plot_cen<- sapply( names(tp3_col)[-3], function(x){ # not include blood
+  cl<- rownames(all_meta)[all_meta[,3]==x]
+  res<-c(median(umap[cl,1]), median(umap[cl,2]))
+  return(res)
+})
+#pdf(paste('../etchevers/result/',batch,'_tp3.pdf',sep=''))
+par(cex=2,las=1,mar=rep(.5,4),lwd=3)
+plot(umap[rand_ind,1],umap[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=tp3_col[as.character(all_meta[rownames(umap),3]) ][rand_ind],cex=0.2,xaxt='n',yaxt='n',main='')
+for(i in 1:ncol(plot_cen)) text( plot_cen[1,i], plot_cen[2,i], label=i, xpd=NA)
+legend( 'bottomright', col=tp3_col[-3], legend=paste(1:(length(tp3_col)-1),names(tp3_col)[-3]), xpd=NA, bty='n', pch=16, cex=.4)
+#dev.off()
+```
+##### Figure 1.6: cell types in this study in the integrated data of three heart datasets.
+######## .
+
+#### 2. Relationship between cell types in integration
+```{r, eval=F, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+#batch<- 'blood_hvg1k'
+batch<- 'blood_hvg1k_cncc2' # separate Asp's CNCC as two clusters
+all_meta[names(tp2_cncc),3] <- tp2_cncc
+
+# Slingshot
+library(slingshot)
+tp<- unname(all_meta[ rownames(pcac),3])
+table(tp)
+slin<- getLineages( data.matrix(pcac[,1:30]), tp ) # ~30 mins
+#write.table( slin@slingParams$dist ,file=paste('../etchevers/',batch, '_sling_dist.txt',sep=''),quote=F,sep='\t')
+slin_dist<-read.table('../etchevers/result/blood_hvg1k_cncc2_sling_dist.txt',sep='\t',as.is=T)
+rownames(slin_dist)-> colnames(slin_dist)
+slin_dist<- data.matrix(slin_dist)
+cl_gp[[4]][[2]]<- c('cncc-1','cncc-2') # update 2 cncc clusters in Asp's data
+```
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# Slingshot distance and convert to similarity
+plot_mx<- 1/(1+slin_dist[unlist(cl_gp),unlist(cl_gp)]) # 1/(1+dist): best
+plot_max<- .25;plot_mx[plot_mx> plot_max]<- plot_max
+#plot_min<- 2; plot_mx[plot_mx< -plot_min]<- plot_min
+diag(plot_mx)<-plot_max
+plot_lab<- rownames(plot_mx)
+plot_lab[ plot_lab=='cardiomyocyte-2' ]<-"splanchnic LPM-21"
+plot_lab[ plot_lab=='Secondary heart field (SHF)' ]<-"second heart field"
+#pdf(paste('../etchevers/result/',batch,'_all_tp_slin_dist.pdf',sep='') )
+tmp<-heatmap3( plot_mx,labRow=plot_lab, labRow2=NA,scale='none',dendrogram='none',trace='none',Rowv=F,Colv=F,symkey=F,density.info="none",keysize=1,col=colorRampPalette(c("blue","white","red"))(499),color_key_label='similarity',color_key_label_cex=1,margins=c(1,1),color_key_axis_cex=1,key_mar=c(2,.5,.5,.5),labCol=NA,labRow_pos=c(2,4),sepwidth=c(0.1,0.1),sepcolor='black',cexRow=.7,cexCol=1 ,lhei=c(1,5),lwid=c(1,5), labCol_las=1, labCol_pos=3, RowSideColors= ds_col[tp_ds[rownames(plot_mx)]] , ColSideColors= ds_col[tp_ds[rownames(plot_mx)]], colsep=c(18, 31, 40), rowsep=c(18, 31, 40) )
+#dev.off()
+```
+##### Figure 2.1: The similarities between cell types in three datasets by slingshot.
+######## .
+
+#### 3. Find matches between datasets
+```{r, eval=F, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# 1) Best match and second best match z-score > XX; All match require > YY;
+# 2) Only match Etc to Asp and Asp to our data
+slin_sim<- 1/(1+slin_dist[unlist(cl_gp),unlist(cl_gp)])
+slin_zs<- lapply( rownames(slin_sim), function(x){ vec<-slin_sim[x,setdiff(colnames(slin_sim),x) ]; (vec-mean(vec))/sd(vec)  }) # exclude self dist
+names(slin_zs)<-rownames(slin_sim)
+zs_cut<- 1
+slin_cut<- 0.06
+slin_link<- sapply( names(slin_zs), function(x){
+  if(tp_ds[x]=='our') return(NULL)
+  if(tp_ds[x]=='asp') tp<- names(slin_zs[[x]])[ tp_ds[names(slin_zs[[x]])]=='our']
+  else tp<- names(slin_zs[[x]])[ tp_ds[names(slin_zs[[x]])]=='asp']
+  res<- NULL
+  best<- tp[ which.max(slin_zs[[x]][tp]) ]
+  if( slin_sim[x,best]>slin_cut ) res<- best
+  if( slin_zs[[x]][ tp[ order(slin_zs[[x]][tp], decreasing=T) ][2] ] > zs_cut ){
+    next_best<- tp[ order(slin_zs[[x]][tp], decreasing=T) ][2]
+    if(slin_sim[x,next_best]>slin_cut ) res<- c(res, next_best )
+  }  
+  return(res)
+})
+slin_link[['Ventricular cardiomyocytes']]<-c(slin_link[['Ventricular cardiomyocytes']], 'ventricle cardiomyocyte-1')
+slin_hit<- matrix(0,nr=nrow(slin_sim), nc=ncol(slin_sim))
+rownames(slin_hit)<- rownames(slin_sim) -> colnames(slin_hit)
+for(i in 1:length(slin_link)){
+  if( length(slin_link[[i]])>0 ){
+  slin_hit[ names(slin_link)[i], slin_link[[i]] ] <-1
+  slin_hit[ slin_link[[i]], names(slin_link)[i] ] <-1
+  }
+}
+```
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+plot_mx<-slin_hit
+#pdf(paste('../etchevers/result/',batch,'_all_tp_slin_dist_cut.pdf',sep='') )
+tmp<-heatmap3( plot_mx,labRow=rownames(plot_mx), labRow2=NA,scale='none',dendrogram='none',trace='none',Rowv=F,Colv=F,symkey=F,density.info="none",keysize=1,col=colorRampPalette(c("blue","white","red"))(499),color_key_label='hit',color_key_label_cex=1,margins=c(1,1),color_key_axis_cex=1,key_mar=c(2, .5, .5, .5),labCol=NA,labRow_pos=c(2,4),sepwidth=c(0.1,0.1),sepcolor='black',cexRow=.7,cexCol=1 ,lhei=c(1,5),lwid=c(1,5), labCol_las=1, labCol_pos=3, RowSideColors= ds_col[tp_ds[rownames(plot_mx)]] , ColSideColors= ds_col[tp_ds[rownames(plot_mx)]], colsep=c(18, 31, 40), rowsep=c(18, 31, 40) )
+#dev.off()
+```
+##### Figure 3.1: The matches of cell types between datasets by thresholding similarity score.
+######## .
+
+```{r, eval=F, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# output hit by igraph
+library(igraph)
+ds_sp<- ds_col
+ds_sp[1:3]<- c('circle','triangle','square')
+# 4 groups
+cl_gp_mx<- matrix(0, nr=4, nc=length(unlist(cl_gp)))
+rownames(cl_gp_mx)<- c('CM','Epi','Endo','CNCC')
+colnames(cl_gp_mx)<- unlist(cl_gp)
+for(i in 1:length(cl_gp)) cl_gp_mx[i,unlist(cl_gp[[i]])]<-1
+hit_4ig<- cbind( rbind(matrix(0,nr=4,nc=4), t(cl_gp_mx)), rbind( cl_gp_mx,slin_hit) )
+rownames(hit_4ig)[1:4]<- colnames(hit_4ig)[1:4]
+hit<- graph_from_adjacency_matrix( hit_4ig, mode='undirected')
+V(hit)$color<- c( rep(NA,4), ds_col[tp_ds[rownames(slin_hit)]] )
+V(hit)$frame.color<- c( rep(NA,4), ds_col[tp_ds[rownames(slin_hit)]] )
+V(hit)$label.cex<- .5
+V(hit)$label.color<- 'black'
+V(hit)$label<- c( rep('',4), rownames(slin_hit))
+V(hit)$label[V(hit)$label=='cardiomyocyte-2']<- "splanchnic LPM-21"
+V(hit)$label[V(hit)$label=='Secondary heart field (SHF)']<- "second heart field"
+V(hit)$shape<-c(rep('circle',4), ds_sp[tp_ds[rownames(slin_hit)]])
+E(hit)$color<-'black'
+E(hit)[.inc(c('CM','Epi','Endo','CNCC'))]$color<-NA
+for(i in 1:length(slin_link)){
+  if(length(slin_link[[i]])>0) E(hit)[slin_link[[i]][1] %--% names(slin_link)[i] ]$color<-'red'
+}
+E(hit)$width<-3
+hit_lay=layout_nicely(hit)  
+#pdf(paste('../etchevers/result/',batch,'_all_tp_slin_dist_igraph.pdf',sep=''), width=6,height=6 )
+#par(mar=c(.5,2,.5,.5))
+#plot(hit, vertex.size=8 , vertex.label.dist=1, vertex.label.degree =pi,layout=hit_lay, vertex.label.cex=.7 )
+#legend('topleft', col=ds_col, legend=c('CS12-CS16','6.5-7w','8.6-10.7w'),xpd=NA,pch=c(16,17,15) )
+#legend('topright', col=c('red','black'), legend=c('best match', '2nd match'),xpd=NA,lty=1,lwd=3)
+#dev.off()
+
+# triangle shape
+# https://igraph.org/r/doc/shapes.html
+mytriangle <- function(coords, v=NULL, params) {
+  vertex.color <- params("vertex", "color")
+  if (length(vertex.color) != 1 && !is.null(v)) {
+    vertex.color <- vertex.color[v]
+  }
+  vertex.size <- 1/150 * params("vertex", "size")
+  if (length(vertex.size) != 1 && !is.null(v)) {
+    vertex.size <- vertex.size[v]
+  }
+  symbols(x=coords[,1], y=coords[,2], bg=vertex.color, fg='NA',
+          stars=cbind(vertex.size, vertex.size, vertex.size),
+          add=TRUE, inches=FALSE)
+}
+# clips as a circle
+add_shape("triangle", clip=shapes("circle")$clip, plot=mytriangle)
+
+
+# new layout as tree
+cl_gp_mx<- matrix(0, nr=4, nc=length(unlist(cl_gp)))
+rownames(cl_gp_mx)<- c('CM','Epi','Endo','CNCC')
+colnames(cl_gp_mx)<- unlist(cl_gp)
+for(i in 1:length(cl_gp)) cl_gp_mx[i,cl_gp[[i]][[1]]]<-1
+hit_tree<- cbind( rbind(matrix(0,nr=4,nc=4), t(cl_gp_mx)), rbind( cl_gp_mx,slin_hit) )
+rownames(hit_tree)[1:4]<- colnames(hit_tree)[1:4]
+fk_link<- c('Mcph2','cncc-1','cncc-2','Smooth muscle cells ')
+names(fk_link)<- c('Endothelium / pericytes ', 'cardiomyocyte-1', 'Secondary heart field (SHF)','epicardium')
+for(i in 1:length(fk_link)){
+  hit_tree[names(fk_link)[i], fk_link[i]]<-1;hit_tree[fk_link[i],names(fk_link)[i]]<-1;
+}
+hit_tree<- hit_tree[c(1:4,6:5,7,9:8,10:nrow(hit_tree)),c(1:4,6:5,7,9:8,10:nrow(hit_tree))] # change node order. NOTICE the order is different with 'slin_hit'
+hit2<- graph_from_adjacency_matrix( hit_tree, mode='undirected')
+V(hit2)$color<- c( rep(NA,4), ds_col[tp_ds[rownames(slin_hit)]] )
+V(hit2)$frame.color<- c( rep(NA,4), ds_col[tp_ds[rownames(slin_hit)]] )
+V(hit2)$label.cex<- .5
+V(hit2)$label.color<- 'black'
+V(hit2)$label<- c( rep('',4), rownames(hit_tree)[-(1:4)])
+V(hit2)$label[V(hit2)$label=='cardiomyocyte-2']<- "splanchnic LPM-21"
+V(hit2)$label[V(hit2)$label=='Secondary heart field (SHF)']<- "second heart field"
+V(hit2)$shape<-c(rep('circle',4), ds_sp[tp_ds[rownames(slin_hit)]])
+E(hit2)$color<-'grey'
+E(hit2)[.inc(c('CM','Epi','Endo','CNCC'))]$color<-NA
+for(i in 1:length(slin_link)){
+  if(length(slin_link[[i]])>0) E(hit2)[slin_link[[i]][1] %--% names(slin_link)[i] ]$color<-'red'
+}
+for(i in 1:length(fk_link)) E(hit2)[fk_link[[i]][1] %--% names(fk_link)[i] ]$color<-NA
+E(hit2)$width<-2
+ds_pos<- c(pi,pi, 0)
+names(ds_pos)<- names(ds_col)
+ds_dist<- c(2,1,1)
+names(ds_dist)<- names(ds_col)
+lab_pos<- c(rep(0,4), ds_pos[tp_ds[rownames(hit_tree)[-(1:4)]]] )
+lab_dist<- c(rep(0,4), ds_dist[tp_ds[rownames(hit_tree)[-(1:4)]]] )
+hit_lay2=layout_as_tree(hit2, root=1:4)
+hit_lay2 <- -hit_lay2[,2:1]
+```
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+#pdf(paste('../etchevers/result/',batch,'_all_tp_slin_dist_igraph2.pdf',sep=''), width=6,height=6 )
+par(mar=c(.5,.5,.5,3))
+plot(hit2, vertex.size=8 , vertex.label.dist=lab_dist, vertex.label.degree =lab_pos,layout=hit_lay2, vertex.label.cex=.8 )
+#legend('topleft', col=ds_col, legend=c('CS12-CS16','6.5-7w','8.6-10.7w'),xpd=NA,pch=c(16,17,15), cex=.8 )
+legend('bottomleft', col=c('red','grey'), legend=c('best match', '2nd match'),xpd=NA,lty=1,lwd=3, cex=.8)
+#dev.off()
+```
+##### Figure 3.2: The matches of cell types between datasets showed by igraph.
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# save.image('asp_scrna_blood.rdata.rdata') # save workspace
+sessionInfo()
+```

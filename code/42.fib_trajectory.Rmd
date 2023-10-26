@@ -1,0 +1,138 @@
+---
+title: "Fibroblast Trajectory"
+output: html_document
+header-includes:
+  - \usepackage{subcaption}
+  - \usepackage{float}
+---
+#### We conducted a trajectory analysis of all fibroblast cells in the integrated data.
+#### There are two parts in this markdown file: 1) reclustering of all fibroblast cells; 2) trajectory analysis of fibroblast cells.
+#### The integration was performed by rPCA in Seurat package. Louvain clustering was applied in the integrated data. Cell types and stages were showed in the integrated Umap (Figure 1.1-1.3).
+#### The trajectory analysis was performed by slingshot based on clusters in the integrated data (Figure 2.1).
+```{r, eval=F, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# Space separator
+```
+
+#### 1. Fibroblast in integrated data
+```{r, eval=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# fibroblast was taken as global cluster #2 (reso=.1)
+fib_cl<- rownames(seu_clu)[seu_clu[,1]==2]
+fib_mx<- lapply(mg_mx, function(x){ x[ ,colnames(x) %in% fib_cl ] })
+# too few cells at batch-2 of our dataset, merged with batch-1
+fib_mx[[1]]<- cbind( fib_mx[[1]], fib_mx[[2]])
+fib_mx<- fib_mx[-2]
+# divide Etc's dataset into stages (observe batch effect between stages if not)
+fib_mx<-c(fib_mx[1:2], by( t(fib_mx[[3]]), all_meta[ colnames(fib_mx[[3]]), 'stage'], t)[c(2,3,1)] )
+
+seu<- lapply( fib_mx, function(x){ CreateSeuratObject( x, min.cells = 0, min.features = 0 )})
+seu <- mapply(function(x, y) {
+    if(y) x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 1000)
+}, x=seu, y=rep(T,5) )
+length(features <- SelectIntegrationFeatures(object.list = seu,nfeatures=1000))
+length( features<- setdiff( features, vis_rmg) )
+seu <- lapply(X = seu, FUN = function(x) {
+    x <- ScaleData(x, features = features, verbose = FALSE)
+    x <- RunPCA(x, features = features, verbose = FALSE)
+})
+anchor <- FindIntegrationAnchors(object.list = seu, anchor.features = features, reduction = "rpca", dims=1:50, reference=3)
+seu_comb <- IntegrateData(anchorset = anchor)
+DefaultAssay(seu_comb) <- "integrated"
+# Run the standard workflow for visualization and clustering
+seu_comb <- ScaleData(seu_comb, verbose = FALSE)
+seu_comb <- RunPCA(seu_comb, npcs = 50, verbose = FALSE, features=features )
+seu_comb <- RunUMAP(seu_comb, reduction = "pca", dims = 1:30)
+fib_umap<-seu_comb@reductions$umap@cell.embeddings
+fib_pcac<- seu_comb@reductions$pca@cell.embeddings
+fib_hvg<- features
+```
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# plot by dataset, cell type
+rand_ind<- sample.int( nrow(fib_umap) )
+tp3_col2<- tp3_col # change colors for fibroblast
+tp3_col2[c(15:17)]<- col6[c(2:4)]
+#pdf(paste('../etchevers/result/','fib/','gloclu2_stage.pdf',sep=''),width=7,height=7) # by all stages
+par(cex=2,las=1,mar=rep(.5,4),lwd=3)
+plot(fib_umap[rand_ind,1],fib_umap[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=st_col[as.character(all_meta[rownames(fib_umap),4]) ][rand_ind],cex=0.2, xaxt='n',yaxt='n')
+legend( 'bottomright', col=st_col, legend=c(names(st_col)[1:3],'6.5-7w',names(st_col)[5:7]), xpd=NA, bty='n', pch=16, cex=.8)
+#dev.off()
+```
+##### Figure 1.1: stages in the integrated data of fibroblast.
+######## .
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# only plot fibroblast
+tp3_col2[! names(tp3_col2) %in% c('Fb1','Fb2','Fb3','Fb4-VIC','SMC') ]<-NA
+#pdf(paste('../etchevers/result/','fib/','gloclu2_dataset_fib.pdf',sep=''),width=7,height=7)
+par(cex=2,las=1,mar=rep(.5,4),lwd=3)
+plot(fib_umap[rand_ind,1],fib_umap[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=tp3_col2[as.character(all_meta[rownames(fib_umap),3]) ][rand_ind],cex=0.2,xaxt='n',yaxt='n',main='')
+legend( 'bottomright', col=tp3_col2[c(14:17,21)], legend=names(tp3_col2)[c(14:17,21)], xpd=NA, bty='n', pch=16, cex=.8)
+#dev.off()
+```
+##### Figure 1.2: cell types from this study in the integrated data of fibroblast.
+######## .
+
+```{r, eval=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# clustering
+seu_comb<- FindNeighbors(seu_comb, dims = 1:30)
+fib_clus <- rep(0, nrow(fib_umap))
+resos<- seq(.1,1,.1)
+for( reso in resos){
+  seu_comb<-FindClusters(seu_comb, resolution =reso, dims.use =1:30 )
+  one_res<- as.numeric(seu_comb@active.ident)
+  names(one_res)<- names(seu_comb@active.ident)
+  fib_clus<- cbind( fib_clus, one_res)  
+}
+fib_clus<- fib_clus[,-1]
+colnames(fib_clus)<- resos
+rownames(fib_clus)<- rownames(fib_umap)
+```
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# plot clusters
+#pdf(paste('../etchevers/result/','fib/','gloclu2_seuclu.pdf',sep=''), width=8,height=12)
+par(cex=2,las=1,mar=c(5,4,1,1),lwd=3, pch=16 )
+i<-5
+plot_cen<- sapply( sort(unique(fib_clus[,i])), function(x){
+  cl<- rownames(fib_clus)[fib_clus[,i]==x]
+  res<-c(median(fib_umap[cl,1]), median(fib_umap[cl,2]))
+  return(res)
+})
+plot(fib_umap[rand_ind,1],fib_umap[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=col6[-1][fib_clus[,i]][rand_ind],cex=0.2,main=max(fib_clus[,i]))
+for(i in 1:ncol(plot_cen)) text( plot_cen[1,i], plot_cen[2,i], label=i, xpd=NA)
+#dev.off()
+```
+##### Figure 1.3: clustering in the integrated data of fibroblast.
+######## .
+
+#### 2. Slingshot trajectory
+```{r, eval=F, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+#### Make clusters for Slingshot
+## directly pick clusters according to global clusters on fibroblast (resolution=.5)
+fib_clu<- fib_clus[,5]
+```
+
+```{r, eval=F, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+#### slingshot with global clusters of fibroblast.
+library(slingshot)
+fib_clu_ear <-tapply( names(fib_clu), fib_clu, function(x){ (sum( all_meta[x,1] %in% 'our')*2 + sum( all_meta[x,1] %in% 'asp'))/length(x)   }) # find root by the number of cells from early stage (our*2, asp*1)
+fib_lin <- getLineages(fib_umap, fib_clu)
+```
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+#pdf(paste('../etchevers/result/','fib/','gloclu2_glo_slin.pdf',sep='') )
+par(cex=2,las=1,mar=rep(0.1,4),lwd=3, pch=16 , xaxt='n',yaxt='n')
+plot(fib_umap, col = col6[-1][fib_clu], frame=F, cex=.2)
+lines(SlingshotDataSet(fib_lin), lwd = 3, col = 'black', cex= 0.01 )
+plot_cen<- sapply( names(fib_clu_ear) , function(x){ c( mean(fib_umap[ names(fib_clu)[fib_clu==x], 1]), mean(fib_umap[ names(fib_clu)[fib_clu==x], 2]) ) })
+clu_cex<- fib_clu_ear*3; clu_cex[clu_cex<0.5]<-0.5; clu_cex[clu_cex>2]<-2
+for( i in 1:ncol(plot_cen)) points( plot_cen[1,i], plot_cen[2,i] , cex=clu_cex[i] ) # plot node size by percentage of early cells
+#dev.off()
+```
+
+##### Figure 2.1: slingshot trajectory based on reclustering in the integrated data of fibroblast.
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# save.image('asp_scrna_blood.rdata.rdata') # save workspace
+sessionInfo()
+```
