@@ -1,0 +1,1399 @@
+---
+output:
+  html_document:
+    theme: cerulean
+    toc: true
+    toc_float: true
+    toc_depth: 3
+---
+
+
+```{r setup, include=FALSE, cache = FALSE}
+### R Markdown
+
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+
+library( digest)        
+library( DT)            
+library( forcats)       
+library( fs)            
+library( future)        
+library( ggplot2)
+library( ggpubr)
+library( ggrepel)
+#library( grid)
+#library( gridExtra)
+library( htmltools)     
+library( htmlwidgets)   
+library( knitr)
+#library( magrittr)
+library( pander)        
+library( patchwork)     
+library( pheatmap)      
+library( plotly)
+library( rmarkdown)
+library( scales)        
+
+require("knitr")
+
+set.seed(1234567)
+# Set and verify the working directory
+active_dict <- "/PATH/INPUT"
+setwd(active_dict)
+getwd()
+opts_knit$set(root.dir = active_dict)
+
+#export data
+exportOptions = list(
+      select = TRUE,
+      searching = TRUE, 
+      scrollX = TRUE,
+      scrollY = TRUE,
+      dom = "BRSpfrti",
+      buttons = list(
+        list(
+          extend = "copy",
+          text = 'Copy the selected',
+          exportOptions = list(modifier = list(selected = TRUE, order    = 'index', page     = 'all', search='none' ))
+        ), 
+        list(
+          extend = "csv",
+          text = 'Exported selected to CSV',
+          exportOptions = list(modifier = list(selected = TRUE, order    = 'index', page     = 'all', search='none'))
+        ),
+        list(
+          extend = "csv",
+          text = 'Exported all to CSV',
+          exportOptions = list(modifier = list(selected = FALSE, order    = 'index', page     = 'all', search='none'))
+        )
+          
+      )
+    )
+
+
+
+```
+
+# Input, markers gene list
+
+```{r echo=FALSE}
+
+# Read individual files of marker genes
+usr_markers <- read.csv("/PATH/INPUT", sep = ",", header = TRUE)
+
+f2 <- read.csv("/PATH/INPUT", sep = ",", header = TRUE)
+
+f3 <- read.csv("/PATH/INPUT", sep = ",", header = TRUE)
+ 
+dim(f3); dim(f2); dim(usr_markers)
+
+usr_markers <- rbind(usr_markers, f2, f3)
+
+
+# Aggregate data: For each unique gene, combine cell type labels
+usr_markers <- aggregate(usr_markers[,2], list(usr_markers[,1]), function(x) paste0(unique(x)))
+
+# Rename columns
+colnames(usr_markers) <- c('gene', 'cell_type')
+print("Aggregated list of marker genes")
+dim(usr_markers)
+
+head(usr_markers)
+
+
+```
+
+# Quality Control
+
+```{r echo=FALSE}
+# read dataset
+
+df1<- Read10X(data.dir = active_dict) 
+  
+
+df2<- Read10X("/PATH/INPUT") 
+  
+
+df3<- Read10X( "/PATH/INPUT")
+
+
+
+df1_project_name <- "hu140_8.6 pcw"  
+df2_project_name <- "hu084_9.0 pcw"
+df3_project_name <- "hu122_10.7 pcw" 
+
+
+
+
+df1_min_cells <- 3
+df1_min_feature <- 0 
+
+
+sc10x_1 = CreateSeuratObject( counts = df1, 
+                            min.cells = df1_min_cells, 
+                            min.features = df1_min_feature, 
+                            project = df1_project_name);
+
+
+sc10x_1[['stage']] <- 'hu140_8.6_pcw' 
+sc10x_1[['gender']] <- 'female' 
+
+# Attribute a numeric ID to each cell (easier than barcode)
+sc10x_1[["numID"]] = 1:length(Cells(sc10x_1))
+
+
+sc10x_2 = CreateSeuratObject( counts = df2, 
+                            min.cells = df1_min_cells, 
+                            min.features = df1_min_feature, 
+                            project = df2_project_name);
+
+
+
+# Attribute a numeric ID to each cell (easier than barcode)
+
+sc10x_2[['stage']] <- 'hu084_9.0_pcw' 
+sc10x_2[['gender']] <- 'male2' 
+sc10x_2[["numID"]] = 1:length(Cells(sc10x_2))
+
+
+sc10x_3 = CreateSeuratObject( counts = df3, 
+                            min.cells = df1_min_cells, 
+                            min.features = df1_min_feature, 
+                            project = df3_project_name);
+
+
+
+# Attribute a numeric ID to each cell (easier than barcode)
+
+sc10x_3[['stage']] <- 'hu122_10.7_pcw' 
+sc10x_3[['gender']] <- 'male3' 
+sc10x_3[["numID"]] = 1:length(Cells(sc10x_3))
+
+print("dimension of raw data hu140_8.6 pcw")
+dim(df1)
+print("dimension of seurat object (filter:min.cells=3) hu140_8.6 pcw")
+dim(sc10x_1)
+
+print("dimension of raw data hu084_9.0 pcw")
+dim(df2)
+print("dimension of seurat object (filter:min.cells=3) hu084_9.0 pcw")
+dim(sc10x_2)
+
+print("dimension of raw data hu122_10.7 pcw")
+dim(df3)
+print("dimension of seurat object (filter:min.cells=3) hu122_10.7 pcw")
+dim(sc10x_3)
+
+```
+
+## hu140_8.6 Quality Control 
+```{r echo=FALSE}
+
+
+### Identify mitocondrial genes in matrix
+mito.genes = grep( pattern = "^mt-", x = rownames(GetAssayData(object = sc10x_1, slot = "counts")), value = TRUE, ignore.case = TRUE)
+
+if(length(mito.genes)==0) 
+{
+  warning( "No mitochondrial genes could be identified in this dataset.");
+} else 
+{
+  # Compute percentage of mitochondrial transcripts in each cell
+  percent.mito <- PercentageFeatureSet(sc10x_1, features=mito.genes)
+  # Add the mitocondrial gene percentage as meta information in the Seurat object
+  sc10x_1[["percent.mito"]] <- percent.mito
+}
+
+### Identify ribosomal genes in matrix
+ribo.genes = grep(pattern = "^rps|^rpl",  x = rownames(GetAssayData(object = sc10x_1, slot = "counts")), value = TRUE, ignore.case=TRUE)
+if(length(ribo.genes)==0) 
+{
+  warning( "No ribosomal genes could be identified in this dataset.");
+} else 
+{
+  # Compute percentage of ribosomal transcripts in each cell
+  percent.ribo <- PercentageFeatureSet(sc10x_1, features=ribo.genes)
+  # Add the ribosomal gene percentage as meta information in the Seurat object
+  sc10x_1[["percent.ribo"]] <- percent.ribo
+}
+
+
+
+```
+
+
+```{r echo=FALSE}
+
+#plotting of inital Qc
+
+cat( "<br>Violin plot for project:", sc10x_1@project.name)
+VlnPlot(sc10x_1, features = c("nFeature_RNA", "nCount_RNA", "percent.mito", "percent.ribo"), ncol = 4)
+print("<br>")
+
+
+sc10x_1_FS1 <- FeatureScatter(sc10x_1, feature1 = "nCount_RNA", feature2 = "percent.mito")
+sc10x_1_FS2 <- FeatureScatter(sc10x_1, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+sc10x_1_FS3 <- FeatureScatter(sc10x_1, feature1 = "nCount_RNA", feature2 = "percent.ribo")
+
+sc10x_1_FS1 + sc10x_1_FS2
+sc10x_1_FS3
+
+
+```
+
+
+```{r echo=TRUE}
+### Identify cells that will be rejected based on specified thresholds
+# Cells with number of UMIs outside the range will be excluded
+FILTER_UMI_MIN <- 100
+FILTER_UMI_MAX <- NULL
+
+# Cells with number of genes outside the range will be excluded
+FILTER_FEATURE_MIN <- 200
+FILTER_FEATURE_MAX <- 7500
+
+# Cells with percentage of mitocohondrial genes above threshold will be excluded
+FILTER_MITOPCT_MAX = 5;
+
+# Cells with percentage of ribosomal genes above threshold will be excluded
+FILTER_RIBOPCT_MAX = 10;
+
+
+
+
+
+```
+
+```{r echo=FALSE}
+
+##########rejecting cells for df1
+# Reject cells based on UMI numbers
+nUMI.drop = logical( length(Cells(sc10x_1)))# ?
+
+if( ! is.null( FILTER_UMI_MIN))
+{
+  nUMI.drop = nUMI.drop | (sc10x_1[["nCount_RNA", drop=TRUE]] < FILTER_UMI_MIN);
+}
+if( ! is.null( FILTER_UMI_MAX))
+{
+  nUMI.drop = nUMI.drop | (sc10x_1[["nCount_RNA", drop=TRUE]] > FILTER_UMI_MAX);
+}
+
+
+
+
+# Reject cells based on number of expressed genes
+nGene.drop = logical( length(Cells(sc10x_1)));
+if( ! is.null( FILTER_FEATURE_MIN))
+{
+  nGene.drop = nGene.drop | (sc10x_1[["nFeature_RNA", drop=TRUE]] < FILTER_FEATURE_MIN);
+}
+if( ! is.null( FILTER_FEATURE_MAX))
+{
+  nGene.drop = nGene.drop | (sc10x_1[["nFeature_RNA", drop=TRUE]] > FILTER_FEATURE_MAX);
+}
+
+# Identify cells with high percentage of mitocondrial genes
+mito.drop = logical( length(Cells(sc10x_1)));
+if( length(mito.genes) && (! is.null(FILTER_MITOPCT_MAX)))
+{
+  mito.drop = (sc10x_1[["percent.mito", drop=TRUE]] > FILTER_MITOPCT_MAX);
+}
+
+# Identify cells with high percentage of ribosomal genes
+ribo.drop = logical( length(Cells(sc10x_1)));
+if( length(ribo.genes) && (! is.null(FILTER_RIBOPCT_MAX)))
+{
+  ribo.drop = (sc10x_1[["percent.ribo", drop=TRUE]] > FILTER_RIBOPCT_MAX);
+}
+
+```
+
+```{r echo=F, include=TRUE}
+### QC plotting for df1
+cat( "<br>Number of cells removed based on number of UMIs:", sum( nUMI.drop));
+cat( "<br>Number of cells removed based on below min and above max threshold of number of genes:", sum( nGene.drop));
+if(exists( "mito.drop")) cat( "<br>Number of cells removed based on high percentage of mitochondrial transcripts:", sum( mito.drop));
+if(exists( "ribo.drop")) cat( "<br>Number of cells removed based on high percentage of ribosomal transcripts:", sum( ribo.drop));
+cat( "\n<br>\n");
+
+# Identify cells to exclude as union of cells with low nb UMI, low nb expressed genes, high pct mito genes, low pct ribo genes
+sc10x_1[["outlier"]] = nUMI.drop  | 
+                     nGene.drop | 
+                     ( if(exists( "mito.drop")) mito.drop else FALSE ) | 
+                     ( if(exists( "ribo.drop")) ribo.drop else FALSE );
+
+cat("<br><br>Removed cells after filters:", sum( unlist(sc10x_1[["outlier"]] )));
+cat("<br>Remaining cells after filters:", sum( ! unlist(sc10x_1[["outlier"]] )));
+cat("\n<br>\n")
+
+
+#############################################
+
+# Filter the excluded cells in the Seurat object
+sc10x_nonFiltered = sc10x_1;
+sc10x_1 = sc10x_1[ , ! sc10x_1[[ "outlier", drop=TRUE ]] ];
+
+
+#droping the cells
+VlnPlot(sc10x_1, features = c("nFeature_RNA", "nCount_RNA", "percent.mito", "percent.ribo"), ncol = 4)
+
+print("data before filters")
+dim(sc10x_nonFiltered)
+print("data after filters")
+dim(sc10x_1)
+
+```
+
+
+```{r echo=TRUE}
+FILTER_FEATURE_MAX <- 9000  # for other two samples (hu084_9.0 and hu122_10.7)
+```
+
+
+
+## hu084_9.0 Quality Control
+```{r echo=FALSE}
+# df2 analysis
+### Identify mitocondrial genes in matrix
+mito.genes = grep( pattern = "^mt-", x = rownames(GetAssayData(object = sc10x_2, slot = "counts")), value = TRUE, ignore.case = TRUE)
+
+if(length(mito.genes)==0) 
+{
+  warning( "No mitochondrial genes could be identified in this dataset.");
+} else 
+{
+  # Compute percentage of mitochondrial transcripts in each cell
+  percent.mito <- PercentageFeatureSet(sc10x_2, features=mito.genes)
+  # Add the mitocondrial gene percentage as meta information in the Seurat object
+  sc10x_2[["percent.mito"]] <- percent.mito
+}
+
+### Identify ribosomal genes in matrix
+ribo.genes = grep(pattern = "^rps|^rpl",  x = rownames(GetAssayData(object = sc10x_2, slot = "counts")), value = TRUE, ignore.case=TRUE)
+if(length(ribo.genes)==0) 
+{
+  warning( "No ribosomal genes could be identified in this dataset.");
+} else 
+{
+  # Compute percentage of ribosomal transcripts in each cell
+  percent.ribo <- PercentageFeatureSet(sc10x_2, features=ribo.genes)
+  # Add the ribosomal gene percentage as meta information in the Seurat object
+  sc10x_2[["percent.ribo"]] <- percent.ribo
+}
+
+
+
+#plotting of inital Qc
+
+cat( "<br>Violin plot for project:", sc10x_2@project.name)
+VlnPlot(sc10x_2, features = c("nFeature_RNA", "nCount_RNA", "percent.mito", "percent.ribo"), ncol = 4)
+print("<br>")
+
+
+sc10x_2_FS1 <- FeatureScatter(sc10x_2, feature1 = "nCount_RNA", feature2 = "percent.mito")
+sc10x_2_FS2 <- FeatureScatter(sc10x_2, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+sc10x_2_FS3 <- FeatureScatter(sc10x_2, feature1 = "nCount_RNA", feature2 = "percent.ribo")
+
+sc10x_2_FS1 + sc10x_2_FS2
+sc10x_2_FS3
+
+
+##########@@@@@@@@@@@@@@@@@@@@@@@@@@@
+##########rejecting cells for df1
+# Reject cells based on UMI numbers
+nUMI.drop = logical( length(Cells(sc10x_2)))# ?
+
+if( ! is.null( FILTER_UMI_MIN))
+{
+  nUMI.drop = nUMI.drop | (sc10x_2[["nCount_RNA", drop=TRUE]] < FILTER_UMI_MIN);
+}
+if( ! is.null( FILTER_UMI_MAX))
+{
+  nUMI.drop = nUMI.drop | (sc10x_2[["nCount_RNA", drop=TRUE]] > FILTER_UMI_MAX);
+}
+
+
+
+FILTER_FEATURE_MAX <- 9000
+# Reject cells based on number of expressed genes
+nGene.drop = logical( length(Cells(sc10x_2)));
+if( ! is.null( FILTER_FEATURE_MIN))
+{
+  nGene.drop = nGene.drop | (sc10x_2[["nFeature_RNA", drop=TRUE]] < FILTER_FEATURE_MIN);
+}
+if( ! is.null( FILTER_FEATURE_MAX))
+{
+  nGene.drop = nGene.drop | (sc10x_2[["nFeature_RNA", drop=TRUE]] > FILTER_FEATURE_MAX);
+}
+
+# Identify cells with high percentage of mitocondrial genes
+mito.drop = logical( length(Cells(sc10x_2)));
+if( length(mito.genes) && (! is.null(FILTER_MITOPCT_MAX)))
+{
+  mito.drop = (sc10x_2[["percent.mito", drop=TRUE]] > FILTER_MITOPCT_MAX);
+}
+
+# Identify cells with high percentage of ribosomal genes
+ribo.drop = logical( length(Cells(sc10x_2)));
+if( length(ribo.genes) && (! is.null(FILTER_RIBOPCT_MAX)))
+{
+  ribo.drop = (sc10x_2[["percent.ribo", drop=TRUE]] > FILTER_RIBOPCT_MAX);
+}
+
+### QC plotting for df1
+cat( "<br>Number of cells removed based on number of UMIs:", sum( nUMI.drop));
+cat( "<br>Number of cells removed based on below min and above max threshold of number of genes:", sum( nGene.drop));
+if(exists( "mito.drop")) cat( "<br>Number of cells removed based on high percentage of mitochondrial transcripts:", sum( mito.drop));
+if(exists( "ribo.drop")) cat( "<br>Number of cells removed based on high percentage of ribosomal transcripts:", sum( ribo.drop));
+cat( "\n<br>\n");
+
+# Identify cells to exclude as union of cells with low nb UMI, low nb expressed genes, high pct mito genes, low pct ribo genes
+sc10x_2[["outlier"]] = nUMI.drop  | 
+                     nGene.drop | 
+                     ( if(exists( "mito.drop")) mito.drop else FALSE ) | 
+                     ( if(exists( "ribo.drop")) ribo.drop else FALSE );
+
+cat("<br><br>Removed cells after filters:", sum( unlist(sc10x_2[["outlier"]] )));
+cat("<br>Remaining cells after filters:", sum( ! unlist(sc10x_2[["outlier"]] )));
+cat("\n<br>\n")
+
+
+#############################################
+
+# Filter the excluded cells in the Seurat object
+sc10x_nonFiltered_2 = sc10x_2;
+sc10x_2 = sc10x_2[ , ! sc10x_2[[ "outlier", drop=TRUE ]] ];
+
+
+#droping the cells
+VlnPlot(sc10x_2, features = c("nFeature_RNA", "nCount_RNA", "percent.mito", "percent.ribo"), ncol = 4)
+
+
+print("data before filters")
+dim(sc10x_nonFiltered_2)
+print("data after filters")
+dim(sc10x_2)
+
+
+
+```
+
+
+
+
+##  hu122_10.7 Quality Control
+```{r echo=FALSE}
+# df2 analysis
+### Identify mitocondrial genes in matrix
+mito.genes = grep( pattern = "^mt-", x = rownames(GetAssayData(object = sc10x_3, slot = "counts")), value = TRUE, ignore.case = TRUE)
+
+if(length(mito.genes)==0) 
+{
+  warning( "No mitochondrial genes could be identified in this dataset.");
+  sc10x_3[["percent.mito"]] <- 0
+} else 
+{
+  # Compute percentage of mitochondrial transcripts in each cell
+  percent.mito <- PercentageFeatureSet(sc10x_3, features=mito.genes)
+  # Add the mitocondrial gene percentage as meta information in the Seurat object
+  sc10x_3[["percent.mito"]] <- percent.mito
+}
+
+
+### Identify ribosomal genes in matrix
+ribo.genes = grep(pattern = "^rps|^rpl",  x = rownames(GetAssayData(object = sc10x_3, slot = "counts")), value = TRUE, ignore.case=TRUE)
+if(length(ribo.genes)==0) 
+{
+  warning( "No ribosomal genes could be identified in this dataset.");
+} else 
+{
+  # Compute percentage of ribosomal transcripts in each cell
+  percent.ribo <- PercentageFeatureSet(sc10x_3, features=ribo.genes)
+  # Add the ribosomal gene percentage as meta information in the Seurat object
+  sc10x_3[["percent.ribo"]] <- percent.ribo
+}
+
+#plotting of inital Qc
+
+cat( "<br>Violin plot for project:", sc10x_3@project.name)
+VlnPlot(sc10x_3, features = c("nFeature_RNA", "nCount_RNA", "percent.mito", "percent.ribo"), ncol = 4)
+print("<br>")
+
+
+sc10x_3_FS1 <- FeatureScatter(sc10x_3, feature1 = "nCount_RNA", feature2 = "percent.mito")
+sc10x_3_FS2 <- FeatureScatter(sc10x_3, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+sc10x_3_FS3 <- FeatureScatter(sc10x_3, feature1 = "nCount_RNA", feature2 = "percent.ribo")
+
+sc10x_3_FS1 + sc10x_3_FS2
+sc10x_3_FS3
+
+
+##########rejecting cells for df1
+# Reject cells based on UMI numbers
+nUMI.drop = logical( length(Cells(sc10x_3)))# ?
+
+if( ! is.null( FILTER_UMI_MIN))
+{
+  nUMI.drop = nUMI.drop | (sc10x_3[["nCount_RNA", drop=TRUE]] < FILTER_UMI_MIN);
+}
+if( ! is.null( FILTER_UMI_MAX))
+{
+  nUMI.drop = nUMI.drop | (sc10x_3[["nCount_RNA", drop=TRUE]] > FILTER_UMI_MAX);
+}
+
+
+
+
+# Reject cells based on number of expressed genes
+nGene.drop = logical( length(Cells(sc10x_3)));
+if( ! is.null( FILTER_FEATURE_MIN))
+{
+  nGene.drop = nGene.drop | (sc10x_3[["nFeature_RNA", drop=TRUE]] < FILTER_FEATURE_MIN);
+}
+if( ! is.null( FILTER_FEATURE_MAX))
+{
+  nGene.drop = nGene.drop | (sc10x_3[["nFeature_RNA", drop=TRUE]] > FILTER_FEATURE_MAX);
+}
+
+# Identify cells with high percentage of mitocondrial genes
+mito.drop = logical( length(Cells(sc10x_3)));
+if( length(mito.genes) && (! is.null(FILTER_MITOPCT_MAX)))
+{
+  mito.drop = (sc10x_3[["percent.mito", drop=TRUE]] > FILTER_MITOPCT_MAX);
+}
+
+# Identify cells with high percentage of ribosomal genes
+ribo.drop = logical( length(Cells(sc10x_3)));
+if( length(ribo.genes) && (! is.null(FILTER_RIBOPCT_MAX)))
+{
+  ribo.drop = (sc10x_3[["percent.ribo", drop=TRUE]] > FILTER_RIBOPCT_MAX);
+}
+
+### QC plotting for df1
+cat( "<br>Number of cells removed based on number of UMIs:", sum( nUMI.drop));
+cat( "<br>Number of cells removed based on below min and above max threshold of number of genes:", sum( nGene.drop));
+if(exists( "mito.drop")) cat( "<br>Number of cells removed based on high percentage of mitochondrial transcripts:", sum( mito.drop));
+if(exists( "ribo.drop")) cat( "<br>Number of cells removed based on high percentage of ribosomal transcripts:", sum( ribo.drop));
+cat( "\n<br>\n");
+
+# Identify cells to exclude as union of cells with low nb UMI, low nb expressed genes, high pct mito genes, low pct ribo genes
+sc10x_3[["outlier"]] = nUMI.drop  | 
+                     nGene.drop | 
+                     ( if(exists( "mito.drop")) mito.drop else FALSE ) | 
+                     ( if(exists( "ribo.drop")) ribo.drop else FALSE );
+
+cat("<br><br>Removed cells after filters:", sum( unlist(sc10x_3[["outlier"]] )));
+cat("<br>Remaining cells after filters:", sum( ! unlist(sc10x_3[["outlier"]] )));
+cat("\n<br>\n")
+
+
+#############################################
+
+# Filter the excluded cells in the Seurat object
+sc10x_nonFiltered_3 = sc10x_3;
+sc10x_3 = sc10x_3[ , ! sc10x_3[[ "outlier", drop=TRUE ]] ];
+
+
+#droping the cells
+VlnPlot(sc10x_3, features = c("nFeature_RNA", "nCount_RNA", "percent.mito", "percent.ribo"), ncol = 4)
+
+print("data before filters")
+dim(sc10x_nonFiltered_3)
+print("data after filters")
+dim(sc10x_3)
+```
+
+## Overview of raw data and seurat object after applying all filters 
+
+```{r echo=FALSE, message= FALSE, warning=FALSE}
+# create dummy data
+print("dimension of raw data hu140_8.6 pcw")
+dim(df1)
+print("dimension of seurat object hu140_8.6 pcw")
+dim(sc10x_1)
+
+print("dimension of raw data hu084_9.0 pcw")
+dim(df2)
+print("dimension of seurat object hu084_9.0 pcw")
+dim(sc10x_2)
+
+print("dimension of raw data hu122_10.7 pcw")
+dim(df3)
+print("dimension of seurat object hu122_10.7 pcw")
+dim(sc10x_3)
+
+#data size
+# create dummy data
+data_dim <- data.frame(
+  raw_Cells_N=c(dim(df1)[2], dim(df2)[2],dim(df3)[2]),
+  raw__Features_N=c(dim(df1)[1], dim(df2)[1], dim(df3)[1]),
+  
+  
+  seu_Cells_N=c(dim(sc10x_1)[2], dim(sc10x_2)[2], dim(sc10x_3)[2]),
+  seu_Features_N=c(dim(sc10x_1)[1], dim(sc10x_2)[1], dim(sc10x_3)[1])
+  
+ 
+  
+)
+
+rownames(data_dim)<- c("hu140_8.6 pcw", "hu084_9.0 pcw", "hu122_10.7 pcw")
+
+data_dim <- as.matrix(data_dim)
+lim <- 1.4*max(data_dim)
+dim_p <- barplot(data_dim , beside=T , legend.text=T,col=c("blue" , "skyblue", "grey") , ylab="N", ylim=c(0,lim))
+#dim_p
+
+
+head(sc10x_1); head(sc10x_2); head(sc10x_3)
+
+```
+# Generating a merged data set
+
+
+```{r echo= F, warning= FALSE , include= T, message= FALSE}
+
+# #add metadata
+ sc10x_1@meta.data[, "sequence"] <- "hu140_8.6 pcw"
+# #add metadata
+ sc10x_2@meta.data[, "sequence"] <- "hu084_9.0 pcw"
+# #add metadata
+ sc10x_3@meta.data[, "sequence"] <- "hu122_10.7 pcw"
+
+# Merging all datasets
+##########################################################......................uncomment......................
+sc10x_merge<- merge(sc10x_1, y = c (sc10x_2, sc10x_3), add.cell.ids = c("hu140_8.6 pcw", "hu084_9.0 pcw", "hu122_10.7 pcw"), project = "sequence", merge.data = TRUE)
+
+
+print("Number of cells in each dataset/sample")
+table(sc10x_merge$sequence)
+
+```
+# Normalization and scaling of merged data set
+* Normalization
+  + Log Normalize (10,000) 
+* Scaling parameters 
+  + data center = TRUE
+  + data scale = FASLE
+  + Regress variables = NULL 
+  
+```{r echo=FALSE}
+
+# Normalization parameters (see Seurat::NormalizeData())
+DATA_NORM_METHOD      = "LogNormalize";
+DATA_NORM_SCALEFACTOR = 10000;
+
+# Scaling parameters (see Seurat::ScaleData())
+DATA_CENTER       = TRUE;
+DATA_SCALE        = FALSE;
+DATA_VARS_REGRESS = NULL;  # c("nCount_RNA") for UMIs (NULL to ignore)
+.VERBOSE = FALSE
+
+# sc10x_1 = NormalizeData( object = sc10x_1,
+#                        normalization.method = DATA_NORM_METHOD,
+#                        scale.factor = DATA_NORM_SCALEFACTOR,
+#                        verbose = .VERBOSE);
+# 
+# sc10x_1 = ScaleData( object    = sc10x_1,
+#                    do.center = DATA_CENTER,
+#                    do.scale  = DATA_SCALE,
+#                    vars.to.regress = DATA_VARS_REGRESS,
+#                    verbose = .VERBOSE)
+# 
+# sc10x_2 = NormalizeData( object = sc10x_2,
+#                        normalization.method = DATA_NORM_METHOD,
+#                        scale.factor = DATA_NORM_SCALEFACTOR,
+#                        verbose = .VERBOSE);
+# 
+# sc10x_2 = ScaleData( object    = sc10x_2,
+#                    do.center = DATA_CENTER,
+#                    do.scale  = DATA_SCALE,
+#                    vars.to.regress = DATA_VARS_REGRESS,
+#                    verbose = .VERBOSE)
+# 
+# sc10x_3 = NormalizeData( object = sc10x_3,
+#                        normalization.method = DATA_NORM_METHOD,
+#                        scale.factor = DATA_NORM_SCALEFACTOR,
+#                        verbose = .VERBOSE);
+# 
+# sc10x_3 = ScaleData( object    = sc10x_3,
+#                    do.center = DATA_CENTER,
+#                    do.scale  = DATA_SCALE,
+#                    vars.to.regress = DATA_VARS_REGRESS,
+#                    verbose = .VERBOSE)
+
+```
+
+
+```{r echo=FALSE}
+# Merged Data normalization and scaling  
+
+sc10x_merge = NormalizeData( object = sc10x_merge,
+                       normalization.method = DATA_NORM_METHOD,
+                       scale.factor = DATA_NORM_SCALEFACTOR,
+                       verbose = .VERBOSE);
+
+sc10x_merge = ScaleData( object    = sc10x_merge,
+                   do.center = DATA_CENTER,
+                   do.scale  = DATA_SCALE,
+                   vars.to.regress = DATA_VARS_REGRESS,
+                   verbose = .VERBOSE)
+
+# Run the standard workflow for visualization and clustering
+#sc10x_merge <- ScaleData(sc10x_merge, verbose = TRUE)
+
+```
+
+
+# Top 2000 variable genes (merged data) 
+```{r echo=FALSE}
+#Variable genes
+
+# Maximum number of variable features to keep
+VARIABLE_FEATURES_MAXNB   = 2000;  # For analysis (PCA)
+VARIABLE_FEATURES_SHOWTOP = 2000;   # For table in report
+
+# Find most variable features
+sc10x_merge = FindVariableFeatures( object = sc10x_merge,
+                              selection.method = "vst",
+                              loess.span = 0.3,
+                              clip.max = "auto",
+                              mean.function = ExpMean,
+                              dispersion.function = LogVMR,
+                              nfeatures = VARIABLE_FEATURES_MAXNB,
+                              verbose = .VERBOSE);
+
+variablesGenesStats = paste(length( VariableFeatures( sc10x_merge)), "/", nrow( sc10x_merge));
+
+
+## @knitr findVariableGenes_summaryPlot
+
+# Prepare a Variance/Expression plot highlighting variable genes and add names of most variable genes
+suppressMessages( suppressWarnings( LabelPoints( plot = VariableFeaturePlot( sc10x_merge) + theme(legend.position = "none"),
+                                                 points = head( VariableFeatures( sc10x_merge), 10),
+                                                 repel = TRUE)));
+
+
+
+
+## @knitr findVariableGenes_summaryTable
+
+# Extract variable genes info as data.frame
+variableAnnotationsDT = head( HVFInfo( object = sc10x_merge, assay = "RNA", selection.method = 'vst')[VariableFeatures( sc10x_merge),], VARIABLE_FEATURES_SHOWTOP);
+variableAnnotationsDT = cbind("Gene" = rownames(variableAnnotationsDT), variableAnnotationsDT);
+
+# show datatable with exporting options
+datatable(
+  variableAnnotationsDT,
+  caption = "Top variable genes in merged data. 2000/2000 are shown here",
+  rownames = FALSE,
+  filter = 'top',
+  extensions = c("Buttons", "Select"),
+  options = exportOptions
+    
+)
+
+
+
+```
+
+# Integrating all datasets to perform an integrated analysis on all cells
+
+
+```{r echo= F, warning= FALSE , include= T, message= FALSE}
+
+
+
+sc10x_merge <- readRDS(file = "/PATH/.rds")
+
+
+
+```
+
+# Linear dimension reduction (PCA)
+
+```{r echo=FALSE}
+
+# PCA 
+
+# Run the standard workflow for visualization and clustering
+#.................................................................... uncomment  
+
+DefaultAssay(sc10x_merge) <- "integrated"
+sc10x_merge <- ScaleData(sc10x_merge, verbose = TRUE)
+sc10x_merge <- RunPCA(sc10x_merge, npcs = 50, verbose = TRUE)
+ElbowPlot(sc10x_merge, ndims = 50)
+
+```
+
+# Clustering 
+```{r echo=FALSE}
+sc10x_merge <- FindNeighbors(sc10x_merge, reduction = "pca", dims = 1:50)
+sc10x_merge <- FindClusters(sc10x_merge, resolution = 0.5)
+
+
+```
+
+
+## Cluster cells count table
+
+```{r echo=FALSE, warning=FALSE}
+cellAndProAndClus <- c()
+cells <- rownames(sc10x_merge)
+cellAndProAndClus <- cbind(cellAndProAndClus,cells, sc10x_merge$orig.ident, sc10x_merge$seurat_clusters)
+colnames(cellAndProAndClus) <- c("cells", "Stage", "Cluster")
+cellAndProAndClus <- as.data.frame(cellAndProAndClus)
+cellAndProAndClus$Cluster <- as.numeric(cellAndProAndClus$Cluster)
+
+cluster <- c()
+cluster_cells.N <- c()
+hu140_8.6_cells.N <- c()
+hu084_9.0_cells.N <- c()
+hu122_10.7_cells.N <- c()
+
+
+
+for(i in sort(unique(cellAndProAndClus$Cluster))){
+  #print(i)
+  
+  temP_df <- cellAndProAndClus[cellAndProAndClus$Cluster == i, ]
+  
+  cluster <- rbind(cluster, i) 
+  cluster_cells.N <- rbind(cluster_cells.N, nrow(temP_df)) 
+  hu140_8.6_cells.N <- rbind(hu140_8.6_cells.N, nrow(temP_df[temP_df$Stage== "hu140_8.6 pcw", ])) 
+  hu084_9.0_cells.N <- rbind(hu084_9.0_cells.N, nrow(temP_df[temP_df$Stage== "hu084_9.0 pcw", ])) 
+  hu122_10.7_cells.N <- rbind(hu122_10.7_cells.N, nrow(temP_df[temP_df$Stage== "hu122_10.7 pcw",])) 
+
+}
+ 
+cluster <-cbind(cluster, cluster_cells.N, hu140_8.6_cells.N, hu084_9.0_cells.N,hu122_10.7_cells.N  )
+
+colnames(cluster)  <- c("cluster", "cluster_cells.N", "hu140_8.6_cells.N", "hu084_9.0_cells.N", "hu122_10.7_cells.N")
+
+
+# datatable( cluster, rownames = FALSE, filter = "top",  options = list(pageLength = 10, scrollX = T), caption = "Number of cells in each cluster")
+
+# show datatable with exporting options
+datatable(
+  cluster,
+  caption = "Number of cells in each cluster",
+  rownames = FALSE,
+  filter = 'top',
+  extensions = c("Buttons", "Select"),
+  options = exportOptions
+    
+)
+
+
+```
+
+
+## Marker Genes for each cluster 
+
+
+```{r echo=FALSE}
+# Identify marker genes
+
+
+# Parameters for identification of marker annotations for clusters (see Seurat::FindAllMarkers())
+FINDMARKERS_METHOD    = "wilcox"  # Method used to identify markers
+FINDMARKERS_ONLYPOS   = TRUE;     # Only consider over-expressed annotations for markers ? (if FALSE down-regulated genes can also be markers)
+FINDMARKERS_MINPCT    = 0.1;      # Only test genes that are detected in a minimum fraction of cells in either of the two populations. Speed up the function by not testing genes that are very infrequently expressed. Default is '0.1'.
+FINDMARKERS_LOGFC_THR = 0.25;     # Limit testing to genes which show, on average, at least X-fold difference (log-scale) between the two groups of cells. Default is '0.25'. Increasing logfc.threshold speeds up the function, but can miss weaker signals.
+FINDMARKERS_PVAL_THR  = 0.01;    # P-Value threshold for identification of significant markers
+FINDMARKERS_SHOWTOP   = NULL;       # Number of marker genes to show in report and tables (NULL for all)
+
+SEED = 12541
+
+
+
+
+markers<- read.csv(file = "/PATH/.csv", header = T, sep = "," )
+
+# Save markers list as 'tsv' table
+write.table( markers,
+             file= file.path("MarkerGenes.tsv" ), 
+             quote = FALSE,
+             row.names = TRUE, 
+             col.names = NA, # Add a blank column name for row names (CSV convention)
+             sep="\t")
+
+# Filter markers by cluster (TODO: check if downstream code works when no markers found)
+topMarkers = by( markers, markers[["cluster"]], function(x)
+{
+  # Filter markers based on adjusted PValue
+  x = x[ x[["p_val_adj"]] < FINDMARKERS_PVAL_THR, , drop = FALSE];
+  # Sort by decreasing logFC
+  
+  x = x[ order(abs(x[["avg_log2FC"]]), decreasing = TRUE), , drop = FALSE ]
+  # Return top ones
+  return( if(is.null( FINDMARKERS_SHOWTOP)) x else head( x, n = FINDMARKERS_SHOWTOP));
+})
+
+# Merge marker genes in a single data.frame and render it as datatable
+topMarkersDF = do.call( rbind, topMarkers);
+# Select and order columns to be shown in datatable
+topMarkersDT = topMarkersDF[c("gene", "cluster", "avg_log2FC", "p_val_adj")]
+
+write.csv(topMarkersDT, "/PATH/OUTPUT/topMarkersDT.csv", row.names = F)
+
+
+```
+
+## Top 20 Differentially expressed gene in each clusters 
+
+```{r echo=FALSE}
+# show datatable with exporting options
+markers %>%
+    group_by(cluster) %>%
+    top_n(n = 20, wt = avg_log2FC) -> topselected
+topselected<- topselected[, c(7, 6, 2:4, 1, 5)]
+
+
+# heatmap of top 20 DEG
+
+DoHeatmap(subset(sc10x_merge, downsample = 300), features = topselected$gene, assay = "integrated", size = 4,
+    angle = 90) + NoLegend()
+
+
+# datatable of top 20 DEG
+
+datatable(
+  topselected,
+  caption = "Top 20 Differentially expressed genes in each cluster",
+  rownames = FALSE,
+  filter = 'top',
+  extensions = c("Buttons", "Select"),
+  options = exportOptions
+    
+)
+
+```
+
+## Mapping known marker genes to differentially expressed genes in each clusters 
+
+```{r echo=FALSE}
+
+
+#join with the marker genes list
+mergeMarkers <- right_join(topMarkersDT, 
+                         usr_markers, 
+                         by = c("gene" = "gene"))
+#mergeMarkers <- merge(topMarkersDT, usr_markers, by =  'gene', all.x = TRUE, all.y = TRUE)
+
+mergeMarkers <- mergeMarkers[order(mergeMarkers$cluster),]
+print("datatable size")
+dim(mergeMarkers)
+
+
+
+# show datatable with exporting options
+datatable(
+  mergeMarkers,
+  caption = "Expression of each known marker gene which is differentially expressed in each cluster",
+  rownames = FALSE,
+  filter = 'top',
+  extensions = c("Buttons", "Select"),
+  options = exportOptions
+    
+)
+
+
+```
+
+
+## Celltype percentage in each/all clusters (differentially expressed known marker genes)  
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(tidyr)
+library(stringr)
+
+ctyp_Markers<- read.csv("/INPUT/Markers.csv", sep = ",", header = T)
+
+
+
+#head(ctyp_Markers)
+
+# SEPERATE ALL cell types in column with gene duplicated names
+markers_allCtype <- ctyp_Markers %>%
+  transform(cell_type = strsplit(cell_type, ",")) %>%
+  unnest(cell_type)
+print("Marker genes list with multiple cell type labels")
+head(markers_allCtype)
+
+
+unique_cell_type <-unique(markers_allCtype$cell_type)
+print("Unique list of cell type labels from input marker genes")
+unique_cell_type
+print("Total number of cell types")
+length(unique_cell_type)
+
+print("Count number of each cell type repeated in each cluster") 
+df<- markers_allCtype %>%
+  group_by(cluster, cell_type) %>%
+  dplyr::summarize(count = n())
+
+names(df)[3]<- "Celltype_n"
+df<- data.frame(df)
+#which(is.na(df))
+df<- df %>% drop_na(cluster)
+
+head(df)
+
+#df[df$cluster==0, ]
+#sum(df$Celltype_n)
+
+
+cell_type_df <-as.data.frame(unique_cell_type) 
+names(cell_type_df) <- "cell_type"
+
+
+for (i in unique(df$cluster)) {
+  #print(i)
+  temp_df <- df[df$cluster==i, -1]
+  
+  names(temp_df)[2] <- paste("(N)cluster", i, sep = "_")
+
+  temp_df[3] <- (temp_df[2]/ sum(temp_df[2]))*100
+  names(temp_df)[3] <- paste("(%)cluster", i, sep = "_")
+  #print(temp_df)
+  
+  cell_type_df <- right_join(temp_df, cell_type_df, by = c("cell_type" = "cell_type"))
+
+  #print(cell_type_df)
+  
+  
+  
+}
+cell_type_df[is.na(cell_type_df)] <- 0
+cell_type_df <- cell_type_df[ ,c(1, ncol(cell_type_df):2)]
+#head(cell_type_df)
+
+#numbers of times each cell type occur in each cluster
+N_cell_type= cell_type_df %>% select(starts_with(c("cell","(N)cluster")))
+N_cell_type$N_total<- rowSums(N_cell_type[-1])
+#head(N_cell_type)
+
+# percentage of each cell type
+Per_cell_type= cell_type_df %>% select(starts_with(c("cell","(%)cluster")))
+Per_cell_type$Per_total<- (rowSums(N_cell_type[-1])/ sum(N_cell_type$N_total))*100
+#head(Per_cell_type)
+
+write.csv(Per_cell_type, "/OUTPUT/Per_cell_typeIntegratedData.csv",  row.names = FALSE)
+
+
+# show datatable with exporting options
+datatable(
+  Per_cell_type,
+  caption = "Celltype percentage in each/all clusters (differentially expressed known marker genes)",
+  rownames = FALSE,
+  filter = 'top',
+  extensions = c("Buttons", "Select"),
+  options = exportOptions
+    
+)
+
+
+```
+
+
+# Non-linear embeddings: UMAP  
+
+```{r echo=FALSE , warning=FALSE, message=FALSE}
+
+
+
+# Dimensionality reduction parameters (TSNE/UMAP)
+DIMREDUC_USE_PCA_NBDIMS = 50;  # Number of dimensions to use from PCA results
+
+sc10x_merge <- RunUMAP(sc10x_merge, reduction = "pca", dims = 1:DIMREDUC_USE_PCA_NBDIMS, n.components = 3L)
+sc10x_merge = RunTSNE( sc10x_merge,reduction = "pca", dims = 1:DIMREDUC_USE_PCA_NBDIMS, dim.embed = 3)
+
+
+
+
+
+```
+
+
+# Integrated data plots
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+DimPlot(sc10x_merge, reduction = "umap", split.by = "orig.ident")
+  
+p1 <- DimPlot(sc10x_merge, reduction = "umap", group.by = "orig.ident")
+p1
+p2 <- DimPlot(sc10x_merge, reduction = "umap", label = TRUE, repel = FALSE,pt.size = 0.25, label.size = 4, 
+  label.color = "black",
+              cols = c("lightseagreen",
+                   "gray50",
+                   "darkgreen",
+                   "red4",
+                   "red",
+                   "turquoise4",
+                   "black",
+                   "yellow4",
+                   "royalblue1",
+                   "lightcyan3",
+                   "peachpuff3",
+                   "khaki3",
+                   "gray20",
+                   "orange2",
+                   "royalblue4",
+                   "yellow3",
+                   "gray80",
+                   "darkorchid1",
+                   "lawngreen",
+                   "plum2",
+                   "darkmagenta"))
+ 
+#p2
+
+# Include additional data to display alongside cell names by passing in a data frame of
+# information Works well when using FetchData
+HoverLocator(plot = p2, information = FetchData(sc10x_merge, vars = c("ident", "nFeature_RNA", "numID")))
+
+p3 <- DimPlot(sc10x_merge, reduction = "tsne", label = TRUE, repel = FALSE,pt.size = 0.25, label.size = 4, 
+  label.color = "black",
+              cols = c("lightseagreen",
+                   "gray50",
+                   "darkgreen",
+                   "red4",
+                   "red",
+                   "turquoise4",
+                   "black",
+                   "yellow4",
+                   "royalblue1",
+                   "lightcyan3",
+                   "peachpuff3",
+                   "khaki3",
+                   "gray20",
+                   "orange2",
+                   "royalblue4",
+                   "yellow3",
+                   "gray80",
+                   "darkorchid1",
+                   "lawngreen",
+                   "plum2",
+                   "darkmagenta"))
+HoverLocator(plot = p3, information = FetchData(sc10x_merge, vars = c("ident", "nFeature_RNA", "numID")))
+
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+
+# Prepare a dataframe for cell plotting
+plot.data <- FetchData(object = sc10x_merge, vars = c("UMAP_1", "UMAP_2", "UMAP_3", "ident", "nFeature_RNA"))
+
+# Make a column of row name identities (these will be your cell/barcode names)
+plot.data$label <- paste(rownames(plot.data))
+
+# Plot your data, in this example my Seurat object had 21 clusters (0-20)
+fig <- plot_ly(data = plot.data, 
+        x = ~UMAP_1, y = ~UMAP_2, z = ~UMAP_3, 
+        color = ~ident, 
+        colors = c("lightseagreen",
+                   "gray50",
+                   "darkgreen",
+                   "red4",
+                   "red",
+                   "turquoise4",
+                   "black",
+                   "yellow4",
+                   "royalblue1",
+                   "lightcyan3",
+                   "peachpuff3",
+                   "khaki3",
+                   "gray20",
+                   "orange2",
+                   "royalblue4",
+                   "yellow3",
+                   "gray80",
+                   "darkorchid1",
+                   "lawngreen",
+                   "plum2",
+                   "darkmagenta"),
+        type = "scatter3d", 
+        mode = "markers", 
+        marker = list(size = 5, width=2), # controls size of points
+        text=~ident, #This is that extra column we made earlier for which we will use for cell ID
+        hoverinfo="text") #When you visualize your plotly object, hovering your mouse pointer over a point shows cell names
+
+
+# xaxis
+axx <- list(
+  nticks = 4,
+  range = c(-10,10) #select range of xaxis
+)
+
+# yaxis
+axy <- list(
+  nticks = 4,
+  range = c(-10,10) #select range of yaxis
+)
+
+#zaxis
+axz <- list(
+  nticks = 4,
+  range = c(-10,10) #select range of zaxis
+)
+
+fig <- fig %>% layout(scene = list(xaxis=axx,yaxis=axy,zaxis=axz))
+fig_cube <- fig %>% layout(scene = list(xaxis=axx,yaxis=axy,zaxis=axz, aspectmode='cube')) # To maintain cubic aspect
+#fig
+fig_cube
+
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+#sc10x_merge <- RunUMAP(sc10x_merge, reduction = "pca", dims = 1:DIMREDUC_USE_PCA_NBDIMS, n.components = 3L)
+
+#head (Embeddings(object = sc10x_merge, reduction = "tsne"))
+
+# Prepare a dataframe for cell plotting
+plot.data <- FetchData(object = sc10x_merge, vars = c("tSNE_1", "tSNE_2", "tSNE_3", "ident", "nFeature_RNA"))
+
+# Make a column of row name identities (these will be your cell/barcode names)
+plot.data$label <- paste(rownames(plot.data))
+
+# Plot your data, in this example my Seurat object had 21 clusters (0-20)
+fig <- plot_ly(data = plot.data, 
+        x = ~tSNE_1, y = ~tSNE_2, z = ~tSNE_3, 
+        color = ~ident, 
+        colors = c("lightseagreen",
+                   "gray50",
+                   "darkgreen",
+                   "red4",
+                   "red",
+                   "turquoise4",
+                   "black",
+                   "yellow4",
+                   "royalblue1",
+                   "lightcyan3",
+                   "peachpuff3",
+                   "khaki3",
+                   "gray20",
+                   "orange2",
+                   "royalblue4",
+                   "yellow3",
+                   "gray80",
+                   "darkorchid1",
+                   "lawngreen",
+                   "plum2",
+                   "darkmagenta"),
+        type = "scatter3d", 
+        mode = "markers", 
+        marker = list(size = 5, width=2), # controls size of points
+        text=~ident, #This is that extra column we made earlier for which we will use for cell ID
+        hoverinfo="text") 
+
+
+# xaxis
+axx <- list(
+  nticks = 4,
+  range = c(-10,10) #select range of xaxis
+)
+
+# yaxis
+axy <- list(
+  nticks = 4,
+  range = c(-10,10) #select range of yaxis
+)
+
+#zaxis
+axz <- list(
+  nticks = 4,
+  range = c(-10,10) #select range of zaxis
+)
+
+fig <- fig %>% layout(scene = list(xaxis=axx,yaxis=axy,zaxis=axz))
+fig_cube <- fig %>% layout(scene = list(xaxis=axx,yaxis=axy,zaxis=axz, aspectmode='cube')) # To maintain cubic aspect
+#fig
+fig_cube
+
+```
+
+
+
+
+```{r, echo=FALSE}
+
+saveRDS(sc10x_merge, file = "/PTAH/FILE.rds")
+
+```
+
+# Assigning cell type identity to clusters
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+new.cluster.ids <- c("CM1", "EndoTh", "CM2", "Atr_condn1", "Immune", "Fb1", "EndoCd", "Fb3","CM5_Atr", "Fb4-VIC",  "Atr_condn2" ,
+    "Fb2", "SMC", "CM6_Atr", "EpiCd", "CM3", "Mitotic_CM", "Mcph1",  "CM4-Melan", "BORN", "Mcph2")
+names(new.cluster.ids) <- levels(sc10x_merge)
+sc10x_merge <- RenameIdents(sc10x_merge, new.cluster.ids)
+
+p<-DimPlot(sc10x_merge, reduction = "umap", label = TRUE, repel = FALSE, cols = c("lightseagreen",
+                   "gray50",
+                   "darkgreen",
+                   "red4",
+                   "red",
+                   "turquoise4",
+                   "black",
+                   "yellow4",
+                   "royalblue1",
+                   "lightcyan3",
+                   "peachpuff3",
+                   "khaki3",
+                   "gray20",
+                   "orange2",
+                   "royalblue4",
+                   "yellow3",
+                   "gray80",
+                   "darkorchid1",
+                   "lawngreen",
+                   "plum2",
+                   "darkmagenta"))
+
+HoverLocator(plot = p, information = FetchData(sc10x_merge, vars = c("ident", "nFeature_RNA", "numID", "seurat_clusters")))
+
+
+
+#tsne
+p3 <- DimPlot(sc10x_merge, reduction = "tsne", label = TRUE, repel = FALSE,pt.size = 0.25, label.size = 4, 
+  label.color = "black",
+              cols = c("lightseagreen",
+                   "gray50",
+                   "darkgreen",
+                   "red4",
+                   "red",
+                   "turquoise4",
+                   "black",
+                   "yellow4",
+                   "royalblue1",
+                   "lightcyan3",
+                   "peachpuff3",
+                   "khaki3",
+                   "gray20",
+                   "orange2",
+                   "royalblue4",
+                   "yellow3",
+                   "gray80",
+                   "darkorchid1",
+                   "lawngreen",
+                   "plum2",
+                   "darkmagenta"))
+HoverLocator(plot = p3, information = FetchData(sc10x_merge, vars = c("ident", "nFeature_RNA", "numID")))
+
+
+```
+
+
+
+
