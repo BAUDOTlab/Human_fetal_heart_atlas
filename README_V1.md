@@ -15,15 +15,15 @@
    + Trajectory analysis  
    
   
-* figures directory contains the html and pdf files of the generated figures 
+* figures/ directory contains the html and pdf files of the generated figures 
 
-* results directory contains results of snRNA data analysis,its integration with spatial transcriptomics data and trajectory analysis  
+* results/ directory contains results of snRNA data analysis,its integration with spatial transcriptomics data and trajectory analysis  
 
-* docs (I DID NOT GET THE PURPOSE OF THIS FOLDER. OUR RMARKDOWN FILES CONATINS ALL THE INFORMATION)
+* docs/ (I DID NOT GET THE PURPOSE OF THIS FOLDER. OUR RMARKDOWN FILES CONATINS ALL THE INFORMATION)
 
-* data (I THINK ITS BETTER TO PROVIDE THE LINK TO DATA INSTAED OF UPLOADING ON GITHUB. OTHER PAPERS HAVE USED THE SIMILER APPROACH)
+* data/ (I THINK ITS BETTER TO PROVIDE THE LINK TO DATA INSTAED OF UPLOADING ON GITHUB. OTHER PAPERS HAVE USED THE SIMILER APPROACH)
 
-### Data availablity
+## Data availablity
 
 The datasets generated and analysed in this study can be found at (LINK)
 * PLEASE ADD THE LINK
