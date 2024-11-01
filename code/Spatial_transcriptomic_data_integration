@@ -1,0 +1,117 @@
+# Spatial transcriptomic data integration
+library(Seurat)
+library(scCustomize)
+library(ggplot2)
+library(patchwork)
+library(dplyr)
+
+#Laod all individual data
+Coeur_2021A17<- Load10X_Spatial(".../2021A17/filtered_feature_bc_matrix", slice = "slice2021A17")
+Coeur_2021A17 <- SCTransform(Coeur_2021A17, assay = "Spatial", verbose = FALSE)
+Coeur_2021A17 <- RenameCells(Coeur_2021A17, new.names = gsub("-.*","-2021A17", colnames(x = Coeur_2021A17)))
+Coeur_2021A17$orig.ident <- "2021A17"
+
+
+Coeur_2021A18<- Load10X_Spatial(".../2021A18/filtered_feature_bc_matrix", slice = "slice2021A18")
+Coeur_2021A18 <- SCTransform(Coeur_2021A18, assay = "Spatial", verbose = FALSE)
+Coeur_2021A18 <- RenameCells(Coeur_2021A18, new.names = gsub("-.*","-2021A18", colnames(x = Coeur_2021A18)))
+Coeur_2021A18$orig.ident <- "2021A18"
+
+
+Coeur_2021A19<- Load10X_Spatial(".../2021A19/filtered_feature_bc_matrix", slice = "slice2021A19")
+Coeur_2021A19 <- SCTransform(Coeur_2021A19, assay = "Spatial", verbose = FALSE)
+Coeur_2021A19 <- RenameCells(Coeur_2021A19, new.names = gsub("-.*","-2021A19", colnames(x = Coeur_2021A19)))
+Coeur_2021A19$orig.ident <- "2021A19"
+
+
+Coeur_2021A20<- Load10X_Spatial(".../2021A20/filtered_feature_bc_matrix", slice = "slice2021A20")
+Coeur_2021A20 <- SCTransform(Coeur_2021A20, assay = "Spatial", verbose = FALSE)
+Coeur_2021A20 <- RenameCells(Coeur_2021A20, new.names = gsub("-.*","-2021A20", colnames(x = Coeur_2021A20)))
+Coeur_2021A20$orig.ident <- "2021A20"
+
+
+Coeur_2021A90<- Load10X_Spatial(".../2021A90/filtered_feature_bc_matrix", slice = "slice2021A90")
+Coeur_2021A90 <- SCTransform(Coeur_2021A90, assay = "Spatial", verbose = FALSE)
+Coeur_2021A90 <- RenameCells(Coeur_2021A90, new.names = gsub("-.*","-2021A90", colnames(x = Coeur_2021A90)))
+Coeur_2021A90$orig.ident <- "2021A90"
+
+
+Coeur_2021A91<- Load10X_Spatial(".../2021A91/filtered_feature_bc_matrix", slice = "slice2021A91")
+Coeur_2021A91 <- SCTransform(Coeur_2021A91, assay = "Spatial", verbose = FALSE)
+Coeur_2021A91 <- RenameCells(Coeur_2021A91, new.names = gsub("-.*","-2021A91", colnames(x = Coeur_2021A91)))
+Coeur_2021A91$orig.ident <- "2021A91"
+
+
+Coeur.list <- list(Coeur_2021A17,Coeur_2021A18, Coeur_2021A19, Coeur_2021A20, Coeur_2021A90, Coeur_2021A91)
+
+Coeur.merge <- Merge_Seurat_List(Coeur.list)
+Coeur.merge <- RenameCells(Coeur.merge, new.names = gsub("_","",colnames(x = Coeur.merge)))
+Coeur.merge[["Spatial"]] <- JoinLayers(Coeur.merge[["Spatial"]])
+Coeur.merge[["Spatial"]] <- split(Coeur.merge[["Spatial"]], f = Coeur.merge$orig.ident)
+
+#########################
+# UNINTEGRATED ANALYSIS #
+#########################
+
+DefaultAssay(Coeur.merge) <- "SCT"
+
+VariableFeatures(Coeur.merge) <- c(VariableFeatures(Coeur_2021A17), VariableFeatures(Coeur_2021A18), VariableFeatures(Coeur_2021A19), VariableFeatures(Coeur_2021A20), VariableFeatures(Coeur_2021A90), VariableFeatures(Coeur_2021A91))
+Coeur.merge <- RunPCA(Coeur.merge, verbose = FALSE)
+Coeur.merge <- FindNeighbors(Coeur.merge, dims = 1:30)
+Coeur.merge <- FindClusters(Coeur.merge, verbose = FALSE)
+Coeur.merge <- RunUMAP(Coeur.merge, dims = 1:30)
+
+DimPlot(Coeur.merge, reduction = "umap", group.by = c("ident", "orig.ident"))
+
+SpatialDimPlot(Coeur.merge)
+
+SpatialFeaturePlot(Coeur.merge, features = c("CRABP2"))
+
+###############
+# INTEGRATION #
+###############
+
+Coeur.anchors <- FindIntegrationAnchors(Coeur.list, dims = 1:30)
+Coeur.integration <- IntegrateData(anchorset = Coeur.anchors, dims = 1:30)
+
+DefaultAssay(Coeur.integration) <- "integrated"
+
+Coeur.integration <- ScaleData(object = Coeur.integration, verbose = FALSE)
+Coeur.integration <- RunPCA(object = Coeur.integration, npcs = 30, verbose = FALSE)
+
+Coeur.integration <- RunUMAP(Coeur.integration, reduction = "pca", dims = 1:30)
+Coeur.integration <- FindNeighbors(Coeur.integration, reduction = "pca", dims = 1:30)
+Coeur.integration <- FindClusters(Coeur.integration, resolution = 0.47)
+
+
+#DefaultAssay(Coeur.integration) <- "SCT"
+DimPlot(Coeur.integration, reduction = "umap", group.by = c("ident", "orig.ident"),cols = "Paired",label = T)
+DimPlot(Coeur.integration, reduction = "umap", group.by = c("ident"),label = T, cols = "Paired")
+DimPlot(Coeur.integration, reduction = "umap", split.by = c("orig.ident"),label = T,)
+
+SpatialDimPlot(Coeur.integration, label = T, label.size = 3,pt.size = 3)
+SpatialDimPlot(Coeur.integration, label = F, label.size = 3, combine = F, stroke = 0, pt.size.factor = 1, cols = "Paired", crop = F)
+SpatialDimPlot(Coeur.integration, label = T, label.size = 3, combine = F, pt.size.factor = 1.45, cols = "Set3")
+
+DimPlot(Coeur.integration, reduction = "umap", split.by = c("orig.ident"), label = T)
+DimPlot(Coeur.integration, reduction = "umap", split.by = c("orig.ident"), label = T)
+DimPlot(Coeur.integration, reduction = "umap", split.by = c("orig.ident"),combine = F, label = T)
+DimPlot(Coeur.integration, reduction = "umap", split.by = c("orig.ident"),combine = F, label = F, cols = "Paired", ncol = 3)
+
+
+DimPlot(Coeur.integration, reduction = "umap", split.by = c("orig.ident"), label = T)
+
+
+#Use DefautAssay SCT to make Spatial plot
+
+#DefaultAssay(Coeur.integration) <- "SCT"
+SpatialFeaturePlot(Coeur.integration, features = c("CRABP2"))
+
+
+##Use DefautAssay integrated to investigate marker genes for each cluster
+DefaultAssay(Coeur.integration) <- "integrated"
+# find markers for every cluster compared to all remaining cells, report only the positive ones
+Coeur.integration.markers <- FindAllMarkers(Coeur.integration, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+Coeur.integration.markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 2, order_by = avg_log2FC)
