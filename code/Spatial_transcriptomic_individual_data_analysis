@@ -1,0 +1,264 @@
+# Individual_spatial_transcriptomic_data_analyses
+
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+library(dplyr)
+
+
+###### Section_A17 #####
+
+# Load_10X_Spatial_data
+
+Coeur_2021A17<- Load10X_Spatial(".../2021A17/filtered_feature_bc_matrix")
+
+# Data_Processing
+
+plot1 <- VlnPlot(Coeur_2021A17, features = "nCount_Spatial", pt.size = 0.1) + NoLegend()
+plot2 <- SpatialFeaturePlot(Coeur_2021A17, features = "nCount_Spatial") + theme(legend.position = "right")
+plot3 <- VlnPlot(Coeur_2021A17, features = "nFeature_Spatial", pt.size = 0.1) + NoLegend()
+wrap_plots(plot1, plot2, plot3)
+
+# Apply SCTransform (Hafemeister and Satija, Genome Biology 2019)
+Coeur_2021A17 <- SCTransform(Coeur_2021A17, assay = "Spatial", verbose = FALSE)
+
+# Gene expression visualization example
+
+SpatialFeaturePlot(Coeur_2021A17, features = c("CRABP2"))
+
+#Dimensionality reduction, clustering, and visualization
+
+Coeur_2021A17 <- RunPCA(Coeur_2021A17, assay = "SCT", verbose = FALSE)
+Coeur_2021A17 <- FindNeighbors(Coeur_2021A17, reduction = "pca", dims = 1:30)
+Coeur_2021A17 <- FindClusters(Coeur_2021A17, verbose = FALSE, resolution = 0.45)
+Coeur_2021A17 <- RunUMAP(Coeur_2021A17, reduction = "pca", dims = 1:30)
+
+#To visualize the results of the clustering in UMAP space or overlaid on the image with SpatialDimPlot().
+
+p1 <- DimPlot(Coeur_2021A17, reduction = "umap", label = TRUE)
+p2 <- SpatialDimPlot(Coeur_2021A17, label = TRUE, label.size = 3)
+p1 + p2
+p1
+p2
+
+DimPlot(Coeur_2021A17, reduction = "umap", label = T)
+
+# Identification of spatially variable Features
+
+# Find markers for every cluster compared to all remaining cells, report only the positive ones
+
+Coeur_2021A17.markers <- FindAllMarkers(Coeur_2021A17, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+Coeur_2021A17.markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 2, order_by = avg_log2FC)
+
+
+
+
+###### Section_A18 #####
+
+# Analysis_2021A18_12_06_2024
+
+# Load_10X_Spatial_data
+
+Coeur_2021A18<- Load10X_Spatial(".../2021A18/filtered_feature_bc_matrix")
+
+#Data_Processing
+
+plot1 <- VlnPlot(Coeur_2021A18, features = "nCount_Spatial", pt.size = 0.1) + NoLegend()
+plot2 <- SpatialFeaturePlot(Coeur_2021A18, features = "nCount_Spatial") + theme(legend.position = "right")
+plot3 <- VlnPlot(Coeur_2021A18, features = "nFeature_Spatial", pt.size = 0.1) + NoLegend()
+wrap_plots(plot1, plot2, plot3)
+
+# Apply SCTransform (Hafemeister and Satija, Genome Biology 2019)
+
+Coeur_2021A18 <- SCTransform(Coeur_2021A18, assay = "Spatial", verbose = FALSE)
+
+# Gene expression visualization
+
+SpatialFeaturePlot(Coeur_2021A18, features = c("CRABP2"))
+
+# Dimensionality reduction, clustering, and visualization
+
+Coeur_2021A18 <- RunPCA(Coeur_2021A18, assay = "SCT", verbose = FALSE)
+Coeur_2021A18 <- FindNeighbors(Coeur_2021A18, reduction = "pca", dims = 1:30)
+Coeur_2021A18 <- FindClusters(Coeur_2021A18, verbose = FALSE, resolution = 0.65)
+Coeur_2021A18 <- RunUMAP(Coeur_2021A18, reduction = "pca", dims = 1:30)
+
+# To visualize the results of the clustering in UMAP space or overlaid on the image with SpatialDimPlot().
+
+p1 <- DimPlot(Coeur_2021A18, reduction = "umap", label = TRUE)
+p2 <- SpatialDimPlot(Coeur_2021A18, label = TRUE, label.size = 3)
+p1 + p2
+
+# identification of spatially variable Features
+# find markers for every cluster compared to all remaining cells, report only the positive ones
+
+Coeur_2021A18.markers <- FindAllMarkers(Coeur_2021A18, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+Coeur_2021A18.markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 2, order_by = avg_log2FC)
+
+
+
+###### Section_A19 #####
+Coeur_2021A19<- Load10X_Spatial(".../2021A19/filtered_feature_bc_matrix")
+
+#Data_Processing
+plot1 <- VlnPlot(Coeur_2021A19, features = "nCount_Spatial", pt.size = 0.1) + NoLegend()
+plot2 <- SpatialFeaturePlot(Coeur_2021A19, features = "nCount_Spatial") + theme(legend.position = "right")
+plot3 <- VlnPlot(Coeur_2021A19, features = "nFeature_Spatial", pt.size = 0.1) + NoLegend()
+wrap_plots(plot1, plot2, plot3)
+
+# Apply SCTransform (Hafemeister and Satija, Genome Biology 2019)
+Coeur_2021A19 <- SCTransform(Coeur_2021A19, assay = "Spatial", verbose = FALSE)
+
+# Gene expression visualization
+
+SpatialFeaturePlot(Coeur_2021A19, features = c("CRABP2"))
+
+# Dimensionality reduction, clustering, and visualization
+
+Coeur_2021A19 <- RunPCA(Coeur_2021A19, assay = "SCT", verbose = FALSE)
+Coeur_2021A19 <- FindNeighbors(Coeur_2021A19, reduction = "pca", dims = 1:30)
+Coeur_2021A19 <- FindClusters(Coeur_2021A19, verbose = FALSE, resolution = 0.35)
+Coeur_2021A19 <- RunUMAP(Coeur_2021A19, reduction = "pca", dims = 1:30)
+
+# To visualize the results of the clustering in UMAP space or overlaid on the image with SpatialDimPlot().
+
+p1 <- DimPlot(Coeur_2021A19, reduction = "umap", label = TRUE)
+p2 <- SpatialDimPlot(Coeur_2021A19, label = TRUE, label.size = 3)
+p1 + p2
+
+DimPlot(Coeur_2021A19, reduction = "umap", label = T)
+SpatialDimPlot(Coeur_2021A19, label = T, label.size = 3, pt.size.factor = 1.5)
+
+# identification of spatially variable Features
+# find markers for every cluster compared to all remaining cells, report only the positive ones
+
+Coeur_2021A19.markers <- FindAllMarkers(Coeur_2021A19, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+Coeur_2021A19.markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 2, order_by = avg_log2FC)
+
+
+###### Section_A20 #####
+
+#Load_10X_Spatial_data
+Coeur_2021A20<- Load10X_Spatial(".../2021A20/filtered_feature_bc_matrix")
+
+#Data_Processing
+plot1 <- VlnPlot(Coeur_2021A20, features = "nCount_Spatial", pt.size = 0.1) + NoLegend()
+plot2 <- SpatialFeaturePlot(Coeur_2021A20, features = "nCount_Spatial") + theme(legend.position = "right")
+plot3 <- VlnPlot(Coeur_2021A20, features = "nFeature_Spatial", pt.size = 0.1) + NoLegend()
+wrap_plots(plot1, plot2, plot3)
+
+# Apply SCTransform (Hafemeister and Satija, Genome Biology 2019)
+
+Coeur_2021A20 <- SCTransform(Coeur_2021A20, assay = "Spatial", verbose = FALSE)
+
+#Gene expression visualization
+
+SpatialFeaturePlot(Coeur_2021A20, features = c("CRABP2"))
+
+#Dimensionality reduction, clustering, and visualization
+
+Coeur_2021A20 <- RunPCA(Coeur_2021A20, assay = "SCT", verbose = FALSE)
+Coeur_2021A20 <- FindNeighbors(Coeur_2021A20, reduction = "pca", dims = 1:30)
+Coeur_2021A20 <- FindClusters(Coeur_2021A20, verbose = FALSE, resolution = 0.30)
+Coeur_2021A20 <- RunUMAP(Coeur_2021A20, reduction = "pca", dims = 1:30)
+
+#To visualize the results of the clustering in UMAP space or overlaid on the image with SpatialDimPlot().
+
+p1 <- DimPlot(Coeur_2021A20, reduction = "umap", label = TRUE)
+p2 <- SpatialDimPlot(Coeur_2021A20, label = TRUE, label.size = 3)
+p1 + p2
+
+# identification of Spatially variable Features
+# find markers for every cluster compared to all remaining cells, report only the positive ones
+
+Coeur_2021A20.markers <- FindAllMarkers(Coeur_2021A20, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+Coeur_2021A20.markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 2, order_by = avg_log2FC)
+
+
+
+###### Section_A90 #####
+Coeur_2021A90<- Load10X_Spatial(".../2021A90/filtered_feature_bc_matrix")
+
+#Data_Processing
+plot1 <- VlnPlot(Coeur_2021A90, features = "nCount_Spatial", pt.size = 0.1) + NoLegend()
+plot2 <- SpatialFeaturePlot(Coeur_2021A90, features = "nCount_Spatial") + theme(legend.position = "right")
+plot3 <- VlnPlot(Coeur_2021A90, features = "nFeature_Spatial", pt.size = 0.1) + NoLegend()
+wrap_plots(plot1, plot2, plot3)
+
+# Apply SCTransform (Hafemeister and Satija, Genome Biology 2019)
+
+Coeur_2021A90 <- SCTransform(Coeur_2021A90, assay = "Spatial", verbose = FALSE)
+
+# Gene expression visualization
+
+SpatialFeaturePlot(Coeur_2021A90, features = c("CRABP2"))
+
+#Dimensionality reduction, clustering, and visualization
+
+Coeur_2021A90 <- RunPCA(Coeur_2021A90, assay = "SCT", verbose = FALSE)
+Coeur_2021A90 <- FindNeighbors(Coeur_2021A90, reduction = "pca", dims = 1:30)
+Coeur_2021A90 <- FindClusters(Coeur_2021A90, verbose = FALSE, resolution = 0.30)
+Coeur_2021A90 <- RunUMAP(Coeur_2021A90, reduction = "pca", dims = 1:30)
+
+# To visualize the results of the clustering in UMAP space or overlaid on the image with SpatialDimPlot().
+
+p1 <- DimPlot(Coeur_2021A90, reduction = "umap", label = TRUE)
+p2 <- SpatialDimPlot(Coeur_2021A90, label = TRUE, label.size = 3)
+p1 + p2
+
+# identification of Spatially variable Features
+# find markers for every cluster compared to all remaining cells, report only the positive ones
+
+Coeur_2021A90.markers <- FindAllMarkers(Coeur_2021A90, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+Coeur_2021A90.markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 2, order_by = avg_log2FC)
+
+
+###### Section_A91 #####
+Coeur_2021A91<- Load10X_Spatial(".../2021A91/filtered_feature_bc_matrix")
+
+#Data_Processing
+plot1 <- VlnPlot(Coeur_2021A91, features = "nCount_Spatial", pt.size = 0.1) + NoLegend()
+plot2 <- SpatialFeaturePlot(Coeur_2021A91, features = "nCount_Spatial") + theme(legend.position = "right")
+plot3 <- VlnPlot(Coeur_2021A91, features = "nFeature_Spatial", pt.size = 0.1) + NoLegend()
+wrap_plots(plot1, plot2, plot3)
+
+# Apply SCTransform (Hafemeister and Satija, Genome Biology 2019)
+
+Coeur_2021A91 <- SCTransform(Coeur_2021A91, assay = "Spatial", verbose = FALSE)
+
+# Gene expression visualization
+
+SpatialFeaturePlot(Coeur_2021A91, features = c("EDIL3"))
+
+#Dimensionality reduction, clustering, and visualization
+
+Coeur_2021A91 <- RunPCA(Coeur_2021A91, assay = "SCT", verbose = FALSE)
+Coeur_2021A91 <- FindNeighbors(Coeur_2021A91, reduction = "pca", dims = 1:30)
+Coeur_2021A91 <- FindClusters(Coeur_2021A91, verbose = FALSE, resolution = 0.35)
+Coeur_2021A91 <- RunUMAP(Coeur_2021A91, reduction = "pca", dims = 1:30)
+
+# To visualize the results of the clustering in UMAP space or overlaid on the image with SpatialDimPlot().
+
+p1 <- DimPlot(Coeur_2021A91, reduction = "umap", label = TRUE)
+p2 <- SpatialDimPlot(Coeur_2021A91, label = TRUE, label.size = 3)
+p1 + p2
+
+# identification of Spatially variable Features
+# find markers for every cluster compared to all remaining cells, report only the positive ones
+
+Coeur_2021A91.markers <- FindAllMarkers(Coeur_2021A91, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+Coeur_2021A91.markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 2, order_by = avg_log2FC)
+
+# Contributed by Christopher De Bono and Camille Humbert
