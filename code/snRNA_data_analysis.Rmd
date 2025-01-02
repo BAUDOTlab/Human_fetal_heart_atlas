@@ -338,7 +338,7 @@ sc10x_nonFiltered = sc10x_1;
 sc10x_1 = sc10x_1[ , ! sc10x_1[[ "outlier", drop=TRUE ]] ];
 
 
-#droping the cells
+#dropping filtered cells
 VlnPlot(sc10x_1, features = c("nFeature_RNA", "nCount_RNA", "percent.mito", "percent.ribo"), ncol = 4)
 
 print("data before filters")
@@ -387,7 +387,7 @@ if(length(ribo.genes)==0)
 
 
 
-#plotting of inital Qc
+#plotting of inital QC
 
 cat( "<br>Violin plot for project:", sc10x_2@project.name)
 VlnPlot(sc10x_2, features = c("nFeature_RNA", "nCount_RNA", "percent.mito", "percent.ribo"), ncol = 4)
