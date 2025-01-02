@@ -1,1 +1,1 @@
-This folder stores high-quality figures, plots, or images used in the paper.
+This folder stores code used to generate high-quality figures, plots, or images for the paper.
