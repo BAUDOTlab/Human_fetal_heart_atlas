@@ -11,7 +11,7 @@ in two- and three-dimensional space and over time. Altogether, anatomical-positi
 subdomains of the atrioventricular septum translate latent molecular identity into specialized cardiac functions. This atlas adds
 unprecedented spatial and temporal resolution to the characterization of human-specific aspects of early heart formation.
 
-+ The preprint can be downloaded from ([bioRxiv](https://www.biorxiv.org/content/10.1101/2024.11.21.624698v1)).
++ The preprint can be downloaded from [bioRxiv](https://www.biorxiv.org/content/10.1101/2024.11.21.624698v1).
 
 
 ## Directory structure
